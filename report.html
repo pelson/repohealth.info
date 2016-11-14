@@ -1,0 +1,23 @@
+{% set data = payload['github'] %}
+{% set computed = payload['computed'] %}
+
+{% for issue in data.issues %}
+    {{ issue.number }}
+{% endfor %}
+
+-------
+<br>
+
+{% for group in computed.contributors.first_commit_T1M_groups %}
+        {{ group.T1 }} - {{ group.count }} (<pre>{% for contrib in group.first_contributions %}{{ contrib.name }}, {% endfor %}</pre>)
+        <br>
+{% endfor %}
+
+
+-----
+<br>
+{% for first_commit in computed.contributors.first_commits %}
+        {{ first_commit.date }} - {{ first_commit.name }}
+        <br>
+{% endfor %}
+
