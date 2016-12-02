@@ -17,7 +17,8 @@ class GistLister(BaseHandler):
 class Logout(BaseHandler):
     def get(self):
         self.clear_cookie("user")
-        self.redirect('/')
+        #self.redirect('/')
+        self.finish('Done')
 
 
 def fetch_repo_data(uuid, token):
@@ -25,6 +26,11 @@ def fetch_repo_data(uuid, token):
     import git 
 
     cache = os.path.join('ephemeral_storage', uuid + '.json')
+    dirname = os.path.dirname(cache)
+    # Ensure the storage location exists.
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
     if os.path.exists(cache):
         with open(cache, 'r') as fh:
             report = json.load(fh)
@@ -83,9 +89,6 @@ class RepoReport(BaseHandler):
                 import jinja2
                 env = jinja2.Environment(loader=jinja2.FileSystemLoader('./'))
                 template = env.get_template('report.html')
-                import json
-                with open('data.json', 'r') as fh:
-                    data = json.load(fh)
     
                 #repo = git.Repo('ephemeral_storage/SciTools/iris')
                 #repo_data = git_analysis.contributors(repo)
@@ -120,6 +123,7 @@ class DataAvailableHandler(BaseHandler):
         else:
             future = datastore[uuid]
             if future.done():
+                # TODO: Result could be the raising of an exception...
                 self.finish(json_encode(future.result()))
             else:
                 self.set_status(202)
@@ -132,23 +136,25 @@ class DataAvailableHandler(BaseHandler):
 
 def make_app(**kwargs):
     app = tornado.web.Application([
-        tornado.web.URLSpec(r'/auth', GithubAuthHandler, name='auth_github'),
+        tornado.web.URLSpec(r'/oauth', GithubAuthHandler, name='auth_github'),
         tornado.web.URLSpec(r'/', GistLister, name='main'),
         tornado.web.URLSpec(r'/data/(.*)', DataAvailableHandler, name='data'),
         tornado.web.URLSpec(r'/report/(.*)', RepoReport),
         (r'/logout', Logout),
-        ], login_url='/auth', xsrf_cookies=True, **kwargs)
+        ], login_url='/oauth', xsrf_cookies=True, **kwargs)
     return app
 
 
 if __name__ == '__main__':
     datastore = {}
     with ProcessPoolExecutor() as executor:
-        app = make_app(github_client_id='2f43c89156cbcf321139',
+        app = make_app(github_client_id=os.environ['CLIENT_ID'],
                        github_client_secret=os.environ['CLIENT_SECRET'],
-                       cookie_secret='a_secret_cookie_salt',
+                       cookie_secret=os.environ['COOKIE_SECRET'],
                        github_scope=['repo', 'user:email'],
                        #               autoreload=True, debug=True,
+                       # xheaders MUST be set on heroku, as x-forward-proto is used to forward http -> https
+                       xheaders=True,
                        executor=executor, datastore=datastore)
         app.listen(os.environ.get('PORT', 8888))
         tornado.ioloop.IOLoop.current().start()

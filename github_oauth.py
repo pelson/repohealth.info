@@ -33,7 +33,6 @@ class GitHubMixin(tornado.auth.OAuth2Mixin):
                       'locale', 'picture', 'link'])
         if extra_fields:
             fields.update(extra_fields)
-
         http.fetch(self._oauth_request_token_url(**args),
                    functools.partial(self._on_access_token, callback))
 
@@ -41,6 +40,7 @@ class GitHubMixin(tornado.auth.OAuth2Mixin):
         args = parse_qs(response.body)
 
         if response.error or 'error' in args:
+            raise ValueError(response.body)
             future.set_exception(tornado.auth.AuthError('GitHub auth error: %s' % str(response)))
             return
 
@@ -63,6 +63,8 @@ class BaseHandler(tornado.web.RequestHandler, GitHubMixin):
         return user
 
     def fq_reverse_url(self, name, *args):
+        print('WHAT WE HAVE:', self.request.uri)
+        print(self.request.headers)
         return "{0}://{1}{2}".format(self.request.protocol,
                                      self.request.host,
                                      self.reverse_url(name, *args))
@@ -72,32 +74,46 @@ class GithubAuthHandler(BaseHandler):
 
     @tornado.gen.coroutine
     def get(self):
+        next_uri = self.get_argument('next', self.fq_reverse_url('main'), strip=True)
+        print('NEXT:', next_uri)
+        auth_uri = tornado.httputil.url_concat(self.fq_reverse_url('auth_github'),
+                                               dict(next=next_uri))
+
+        error = self.get_argument('error', None, strip=True)
+        if error:
+            msg = self.get_argument('error_description', 'No error message provided', strip=True)
+            self.clear()
+            self.set_status(400)
+            self.finish("<html><body>{}<br>{}</body></html>".format(msg, auth_uri))
+            return
+
         # If we are already authorized, just continue on through.
         if self.get_current_user():
-            self.redirect(self.fq_reverse_url("main"))
+            self.redirect(next_uri)
             return
 
         code = self.get_argument('code', None)
-
         if code:
-            print('REQUEST!')
+            # We have the code, now get a token.
             access = yield self.get_authenticated_user(
-                redirect_uri=self.fq_reverse_url('auth_github'),
+                redirect_uri=auth_uri,
                 client_id=self.settings['github_client_id'],
                 client_secret=self.settings['github_client_secret'],
                 code=self.get_argument('code'),
                 callback=self._on_auth,
                 )
-            self.redirect(self.reverse_url("main"))
+            print('Access:', access)
+            self.redirect(next_uri)
             return
 
         else:
             # We have no authorization code yet, so redirect to GitHub and come back here when we do.
             yield self.authorize_redirect(
-                redirect_uri=self.fq_reverse_url('auth_github'),
+                redirect_uri=auth_uri,
                 client_id=self.settings['github_client_id'],
                 client_secret=self.settings['github_client_secret'],
                 scope=self.settings['github_scope'])
+
 
     def _on_auth(self, user, access_token=None):
         if not user:
@@ -106,10 +122,13 @@ class GithubAuthHandler(BaseHandler):
             return
 
         user = tornado.escape.json_encode(user)
-        print('USER:', user)
         if 'error' in user:
+            raise ValueError(user)
+            raise tornado.web.HTTPError(500, "Github auth failed")
+            self.clear_cookie("user")
             return
-        self.set_secure_cookie("user", user)
+
+        self.set_secure_cookie("user", user, expires_days=1)
 
 
 class GistLister(BaseHandler):
