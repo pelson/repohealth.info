@@ -150,5 +150,5 @@ if __name__ == '__main__':
                        github_scope=['repo', 'user:email'],
                        #               autoreload=True, debug=True,
                        executor=executor, datastore=datastore)
-        app.listen(8888)
+        app.listen(os.environ.get('PORT', 8888))
         tornado.ioloop.IOLoop.current().start()
