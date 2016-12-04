@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -x
 
+# The build script for https://github.com/weibeld/heroku-buildpack-run
+
+
 STORAGE_LOCN=$(pwd)
 
 # ----------
