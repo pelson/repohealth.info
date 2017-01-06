@@ -27,3 +27,9 @@ body {
 .branding i {
   vertical-align: middle;
 }
+
+.small-plot {
+   width: 40%;
+   min-width: 700px;
+   height: 40%;
+}

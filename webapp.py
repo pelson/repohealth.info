@@ -80,19 +80,27 @@ def fetch_repo_data(uuid, token):
         with open(cache, 'w') as fh:
             json.dump(report, fh)
 
-    target = os.path.join('ephemeral_storage', uuid)
-    if os.path.exists(target):
-        repo = git.Repo(target)
-        for remote in repo.remotes:
-            remote.fetch()
-    else:
-        repo = git.Repo.clone_from(repo.clone_url, target)     
-    import git_analysis
+    cache = os.path.join('ephemeral_storage', uuid + '_computed.json')
+    if not os.path.exists(cache):
+        target = os.path.join('ephemeral_storage', uuid)
+        if os.path.exists(target):
+            repo = git.Repo(target)
+            for remote in repo.remotes:
+                remote.fetch()
+        else:
+            repo = git.Repo.clone_from(repo.clone_url, target)     
+        import git_analysis
 
-    repo_data = git_analysis.contributors(repo)
-    computed = {'contributors': repo_data}
-    return {'computed': computed, 'github': report}
-    
+        repo_data = git_analysis.commits(repo)
+        with open(cache, 'w') as fh:
+            json.dump(repo_data, fh)
+    else:
+        with open(cache, 'r') as fh:
+            repo_data = json.load(fh)
+
+    repo_data['github'] = report
+    return repo_data
+ 
 
 from concurrent.futures import ProcessPoolExecutor
 
@@ -118,6 +126,59 @@ class RepoReport(BaseHandler):
                 #computed = {'contributors': repo_data} 
                 payload = datastore[uuid].result()
                 #self.finish(template.render(payload=payload))
+
+                import plotly
+                import plotly.plotly as py
+                import plotly.graph_objs as go
+                import plotly.offline.offline as pl_offline
+
+                
+                def html(fig):
+                    config = dict(showLink=False, displaylogo=False)
+                    plot_html, plotdivid, width, height = pl_offline._plot_html(
+                        fig, config, validate=True,
+                        default_width='100%', default_height='100%', global_requirejs=False)
+
+                    script_split = plot_html.find('<script ')
+                    plot_content = {'div': plot_html[:script_split],
+                                    'script': plot_html[script_split:],
+                                    'id': plotdivid}
+                    return plot_content
+
+                payload['viz'] = {}
+                import pandas as pd
+                commits = pd.DataFrame.from_dict(payload['commits'])
+                first_commits = commits.drop_duplicates(subset='email')
+
+
+                trace0 = go.Scatter(
+                    x=first_commits['date'],
+                    y=[i + 1 for i in range(len(first_commits['date']))],
+                    text=first_commits['name'],
+                )
+                fig = go.Figure(data=[trace0])
+                payload['viz']['new_contributors'] = html(fig)
+
+                
+                trace0 = go.Scatter(
+                    x=commits['date'],
+                    y=[i + 1 for i in range(len(commits['date']))]
+                )
+                fig = go.Figure(data=[trace0])
+                payload['viz']['commits'] = html(fig)
+
+
+                add = sub = go.Scatter(
+                    x=commits['date'],
+                    y=commits['insertions'].cumsum(),
+                    text=commits['sha'],
+                )
+                sub = go.Scatter(
+                    x=commits['date'],
+                    y=commits['deletions'].cumsum(),
+                )
+                fig = go.Figure(data=[add, sub])
+                payload['viz']['add_sub'] = html(fig)
 
                 self.finish(self.render('report.html', payload=payload))
 
