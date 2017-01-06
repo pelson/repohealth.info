@@ -14,6 +14,7 @@
 
     <!-- FontAwesome -->
     <link rel="stylesheet" href="{{ url_prefix }}static/font-awesome-4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="{{ url_prefix }}static/css/font-awesome-animation.min.css">
 
     {% endblock %}
 
@@ -34,7 +35,7 @@
           </button>
           <div class="navbar-left branding">
             <a href="{{ url_prefix }}">
-            <i class="fa fa-fw fa-2x fa-heartbeat" aria-hidden="true"></i>
+            <i class="fa fa-fw fa-2x fa-heartbeat on fa-github faa-pulse animated" aria-hidden="true"></i>
             GitHub repo health report</a>
           </div>
         </div>
@@ -43,7 +44,7 @@
               <div class="input-group">
                   <input type="text" size=40 class="form-control" placeholder="GitHub repo (e.g. &quot;pandas-dev/pandas&quot;)" value="{{ repo_slug }}">
                   <span class="input-group-btn">
-                      <button class="btn btn-secondary" type="button"><i class="fa fa-medkit"></i></button>
+                      <button class="btn btn-secondary" type="button"><i class="fa fa-medkit faa-ring animated-hover"></i></button>
                   </span>
             </div>
             {{ handler.xsrf_form_html() }}
