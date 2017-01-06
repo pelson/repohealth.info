@@ -1,0 +1,94 @@
+{% set url_prefix='/' %}
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+
+    {% block head %}
+    <!-- Bootstrap -->
+    <link href="{{ url_prefix }}static/bootstrap-3.3.7-dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="{{ url_prefix }}static/font-awesome-4.7.0/css/font-awesome.min.css">
+
+    {% endblock %}
+
+    <link href="{{ url_prefix }}static/css/style.css" rel="stylesheet">
+
+  </head>
+  <body>
+    {% block nav %}
+    <!-- Fixed navbar -->
+    <nav class="navbar navbar-default navbar-fixed-top">
+      <div class="container">
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <div class="navbar-left branding">
+            <a href="{{ url_prefix }}">
+            <i class="fa fa-fw fa-2x fa-heartbeat" aria-hidden="true"></i>
+            GitHub repo health report</a>
+          </div>
+        </div>
+        <div id="navbar" class="navbar-collapse collapse">
+          <form class="navbar-form navbar-left" method="POST" action="">
+              <div class="input-group">
+                  <input type="text" size=40 class="form-control" placeholder="GitHub repo (e.g. &quot;pandas-dev/pandas&quot;)" value="{{ repo_slug }}">
+                  <span class="input-group-btn">
+                      <button class="btn btn-secondary" type="button"><i class="fa fa-medkit"></i></button>
+                  </span>
+            </div>
+            {{ handler.xsrf_form_html() }}
+          </form>
+
+          <ul class="nav navbar-nav navbar-right">
+          {% block auth %}
+          <li><p class="navbar-btn">
+          {% if not authenticated %}
+            <a href="{{ url_prefix }}oauth" class="btn btn-success">
+            Login with GitHub
+            </a>
+          {% else %}
+            <a href="{{ url_prefix }}logout" class="btn btn-success">Logout</a>
+<!--          </li><li>Logged in ! https://developer.github.com/v3/users/#get-a-single-user
+            {{ handler.get_current_user() }} -->
+          {% endif %}
+          </p></li>
+          {% endblock %}
+          </ul>
+        </div>
+      </div>
+    </nav>
+    {% endblock %}
+
+    {% block content_container %}
+    <div class="container-fluid">
+        {% block content %}
+        {% endblock %}
+    </div>
+    {% endblock %}
+
+    {% block post_content %}
+    <script src="{{ url_prefix }}static/js/jquery-3.1.1.min.js"></script>
+    <script src="{{ url_prefix }}static/bootstrap-3.3.7-dist/js/bootstrap.min.js"></script>
+    {% endblock %}
+    <footer class="footer">
+      <div class="container">
+        <p>Created by Phil Elson |
+    <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">
+        <img alt="Creative Commons Licence" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/80x15.png" />
+    </a>
+    This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.
+        </p>
+        </div>
+    </footer>
+  </body>
+</html>

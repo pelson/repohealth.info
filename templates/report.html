@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% set data = payload['github'] %}
+{% set computed = payload['computed'] %}
+{% set repo_slug = payload['github']['repo']['full_name'] %}
+
+{% for issue in data.issues %}
+    {{ issue.number }}
+{% endfor %}
+
+{% block content %}
+<br>
+
+{% for group in computed.contributors.first_commit_T1M_groups %}
+<ul>
+    <li>{{ group.T1 }}</li>
+    <li>{{ group.count }}</li>
+    <ul>{% for contrib in group.first_contributions %}<li>{{ contrib.name }}</li>{% endfor %}</ul>
+</ul>
+{% endfor %}
+
+
+-----
+<br>
+{% for first_commit in computed.contributors.first_commits %}
+        {{ first_commit.date }} - {{ first_commit.name }}
+        <br>
+{% endfor %}
+
+{% endblock %}
+
