@@ -1,0 +1,29 @@
+html {
+  position: relative;
+  min-height: 100%;
+}
+
+body {
+    padding-top: 70px;
+    margin-bottom: 60px;
+}
+
+.footer {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 60px;
+}
+
+.branding {
+    line-height: 50px;
+}
+
+.branding a {
+  font-size: x-large;
+  color: gray;
+}
+
+.branding i {
+  vertical-align: middle;
+}
