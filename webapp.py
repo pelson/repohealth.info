@@ -1,24 +1,48 @@
 import datetime
 import os
 import json
-import tornado.ioloop
-import tornado.web
 import time
 
-from github_oauth import BaseHandler, GithubAuthHandler
+from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler
+import tornado.autoreload
+import tornado.ioloop
+import tornado.web
+
+from jinja2 import Environment, FileSystemLoader 
 
 
-class GistLister(BaseHandler):
-    @tornado.web.authenticated
-    def get(self):
-        self.finish(str(self.get_current_user()))
+class BaseHandler(OAuthBase):
+    def render_template(self, template_name, **kwargs):
+        template_dirs = self.settings["template_path"]
+        env = Environment(loader=FileSystemLoader(template_dirs))
+        template = env.get_template(template_name)
+        content = template.render(kwargs)
+        return content
+
+
+    def render(self, template_name, **kwargs):
+        """
+        This is for making some extra context variables available to
+        the template
+        """
+        kwargs.update({
+            'settings': self.settings,
+            'STATIC_URL': self.settings.get('static_url_prefix', '/static/'),
+            'request': self.request,
+            'xsrf_token': self.xsrf_token,
+            'xsrf_form_html': self.xsrf_form_html,
+            'authenticated': self.get_current_user() is not None,
+            'handler': self
+        })
+        content = self.render_template(template_name, **kwargs)
+
+        self.write(content)
 
 
 class Logout(BaseHandler):
     def get(self):
         self.clear_cookie("user")
-        #self.redirect('/')
-        self.finish('Done')
+        self.redirect(self.reverse_url('main'))
 
 
 def fetch_repo_data(uuid, token):
@@ -73,7 +97,6 @@ def fetch_repo_data(uuid, token):
 from concurrent.futures import ProcessPoolExecutor
 
 class RepoReport(BaseHandler):
-
     @tornado.web.authenticated
     def get(self, uuid):
         datastore = self.settings['datastore']
@@ -94,8 +117,9 @@ class RepoReport(BaseHandler):
                 #repo_data = git_analysis.contributors(repo)
                 #computed = {'contributors': repo_data} 
                 payload = datastore[uuid].result()
+                #self.finish(template.render(payload=payload))
 
-                self.finish(template.render(payload=payload))
+                self.finish(self.render('report.html', payload=payload))
 
 
 class DataAvailableHandler(BaseHandler):
@@ -134,27 +158,41 @@ class DataAvailableHandler(BaseHandler):
                 self.finish(json_encode(response))
 
 
+class MainHandler(BaseHandler):
+    def get(self):
+        self.render("index.html")
+
+
 def make_app(**kwargs):
     app = tornado.web.Application([
         tornado.web.URLSpec(r'/oauth', GithubAuthHandler, name='auth_github'),
-        tornado.web.URLSpec(r'/', GistLister, name='main'),
+        tornado.web.URLSpec(r'/', MainHandler, name='main'),
+        (r'/static/(.*)', tornado.web.StaticFileHandler),
         tornado.web.URLSpec(r'/data/(.*)', DataAvailableHandler, name='data'),
         tornado.web.URLSpec(r'/report/(.*)', RepoReport),
         (r'/logout', Logout),
-        ], login_url='/oauth', xsrf_cookies=True, **kwargs)
+        ],
+        login_url='/oauth', xsrf_cookies=True,
+        template_path='templates',
+        static_path='static',
+        **kwargs)
     return app
 
 
 if __name__ == '__main__':
+    # Our datastore is simply a dictionary of {Repo UUID: Future objects}
     datastore = {}
-    with ProcessPoolExecutor() as executor:
-        app = make_app(github_client_id=os.environ['CLIENT_ID'],
-                       github_client_secret=os.environ['CLIENT_SECRET'],
-                       cookie_secret=os.environ['COOKIE_SECRET'],
-                       github_scope=['repo', 'user:email'],
-                       #               autoreload=True, debug=True,
-                       # xheaders MUST be set on heroku, as x-forward-proto is used to forward http -> https
-                       xheaders=True,
-                       executor=executor, datastore=datastore)
-        app.listen(os.environ.get('PORT', 8888))
-        tornado.ioloop.IOLoop.current().start()
+
+    app = make_app(github_client_id=os.environ['CLIENT_ID'],
+                   github_client_secret=os.environ['CLIENT_SECRET'],
+                   cookie_secret=os.environ['COOKIE_SECRET'],
+                   github_scope=['repo', 'user:email'],
+                   autoreload=True, debug=True,
+                   datastore=datastore)
+    app.listen(os.environ.get('PORT', 8888))
+
+    executor = ProcessPoolExecutor()
+    app.settings['executor'] = executor
+
+    tornado.autoreload.add_reload_hook(executor.shutdown)
+    tornado.ioloop.IOLoop.current().start()

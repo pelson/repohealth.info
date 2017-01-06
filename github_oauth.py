@@ -63,15 +63,20 @@ class BaseHandler(tornado.web.RequestHandler, GitHubMixin):
         return user
 
     def fq_reverse_url(self, name, *args):
-        print('WHAT WE HAVE:', self.request.uri)
-        print(self.request.headers)
         return "{0}://{1}{2}".format(self.request.protocol,
                                      self.request.host,
                                      self.reverse_url(name, *args))
 
 
-class GithubAuthHandler(BaseHandler):
+class GithubAuthLogout(BaseHandler):
+    def get(self):
+        next_uri = self.get_argument('next', self.reverse_url('main'),
+                                     strip=True)
+        self.clear_cookie("user")
+        self.redirect(next)
 
+
+class GithubAuthHandler(BaseHandler):
     @tornado.gen.coroutine
     def get(self):
         next_uri = self.get_argument('next', self.fq_reverse_url('main'), strip=True)
@@ -123,10 +128,8 @@ class GithubAuthHandler(BaseHandler):
 
         user = tornado.escape.json_encode(user)
         if 'error' in user:
-            raise ValueError(user)
-            raise tornado.web.HTTPError(500, "Github auth failed")
             self.clear_cookie("user")
-            return
+            raise tornado.web.HTTPError(500, "Github auth failed")
 
         self.set_secure_cookie("user", user, expires_days=1)
 

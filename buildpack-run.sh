@@ -18,7 +18,7 @@ env_dir=$(cd "$3/" && pwd)
 wget -q https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
 bash miniconda.sh -b -p $HOME/.conda
 $HOME/.conda/bin/conda install --yes -c defaults -c conda-forge \
-         gitpython pygithub jinja2 tornado requests pandas nomkl
+         gitpython pygithub jinja2 tornado requests pandas nomkl --file requirements.txt
 
 cp -rf $HOME/.conda $STORAGE_LOCN/.conda
 
