@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+            <div class="card">
+                <i class="fa fa-spinner fa-pulse fa-5x fa-5x fa-fw"></i>
+                  <h3 class="card-header">Featured</h3>
+                    <div class="card-block">
+                            <h4 class="card-title">Special title treatment</h4>
+                            <p class="card-text">
+<div>
+<span class="sr-only">Loading...</span>
+</div>
+
+<i class="fa fa-wrench faa-wrench animated"></i>
+
+<ul id="log"></ul>
+<div id="status"></div>
+
+</div>
+    </div>
+
+
+{% endblock %}
+
+{% block post_content %}
+{{ super() }}
+<script>
+
+function redirect_when_ready() {
+    $.ajax({
+            url: "/data/{{ slug }}",
+            method: "POST",
+            data: {token: '{{ token }}'},
+            success: function( data ) {
+                      $('#status').html(data.message);
+                      console.log(data);
+
+                    var cList = $('ul#log');
+                    lis = cList.find('li');
+                    for (i = 0; i < data.status_info.length; i++) {
+                        if (i >= lis.length) {
+                            var li = $('<li/>').attr("id", "status-" + i).appendTo(cList);
+                            var message = $('<div/>').addClass('status-message').appendTo(li);
+                            var spinner = $('<div/>').addClass('spinny').appendTo(li);
+                            spinner.html('<i class="fa fa-cog fa-spin fa-3x fa-fw"></i>');
+                        } else {
+                            li = $('#status-' + i)
+                            message = li.find('.status-message');
+                        }
+                        var status = data.status_info[i];
+                        if (data.status_info[i].end !== undefined) {
+                            spinner = $(li.find('.spinny')[0]);
+                            spinner.html('<i class="fa fa-check"></i>');
+                        } 
+
+                        message.text(data.status_info[i].status);
+                    }
+
+                      if (data.status == 200) {
+                        // TODO: Notify the user in case it doesn't work?
+                        $('#status').html('Reloading page now that the resource is available.');
+                        window.location.replace("http://localhost:8888/report/{{ slug }}");
+                      } else {
+                        // Try again in 0.2 seconds.
+                        setTimeout(redirect_when_ready, 200);
+                      }
+                     },
+            error: function(data, hmmm, status) {
+                                                 console.log(data);
+
+                                                 $('#status').html(data.responseJSON.message);
+                                                 }
+    });
+};
+
+redirect_when_ready();
+</script>
+
+{% endblock %}

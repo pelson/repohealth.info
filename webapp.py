@@ -1,14 +1,15 @@
+from concurrent.futures import ProcessPoolExecutor
 import datetime
 import os
 import json
 import time
 
-from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler
+from jinja2 import Environment, FileSystemLoader 
 import tornado.autoreload
 import tornado.ioloop
 import tornado.web
 
-from jinja2 import Environment, FileSystemLoader 
+from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout
 
 
 class BaseHandler(OAuthBase):
@@ -19,11 +20,11 @@ class BaseHandler(OAuthBase):
         content = template.render(kwargs)
         return content
 
-
     def render(self, template_name, **kwargs):
         """
         This is for making some extra context variables available to
-        the template
+        the template.
+
         """
         kwargs.update({
             'settings': self.settings,
@@ -39,15 +40,35 @@ class BaseHandler(OAuthBase):
         self.write(content)
 
 
-class Logout(BaseHandler):
-    def get(self):
-        self.clear_cookie("user")
-        self.redirect(self.reverse_url('main'))
+class Error404(BaseHandler):
+    def prepare(self):
+        self.set_status(404)
+        self.finish(self.render('404.html'))
 
 
 def fetch_repo_data(uuid, token):
     from github import Github
     import git 
+
+    def update_status(message=None, clear=False):
+        status_file = os.path.join('ephemeral_storage', uuid + '.status.json')
+        if not os.path.exists(status_file) or clear:
+            existing_status = []
+        else:
+            with open(status_file, 'r') as fh:
+                existing_status = json.load(fh)
+
+            # Log the last status item as complete.
+            existing_status[-1]['end'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        # Allow for the option of not adding a status message so that we can call this
+        # function close off the previous message once it is complete.
+        if message is not None:
+            existing_status.append(dict(start=datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                                        status=message))
+
+        with open(status_file, 'w') as fh:
+            json.dump(existing_status, fh)
 
     cache = os.path.join('ephemeral_storage', uuid + '.json')
     dirname = os.path.dirname(cache)
@@ -55,18 +76,21 @@ def fetch_repo_data(uuid, token):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
 
+    update_status('Initial validation of repo', clear=True)
+    g = Github(token)
+    requests = 0
+    repo = g.get_repo(uuid)
+
     if os.path.exists(cache):
+        update_status('Load GitHub API data from ephemeral cache')
         with open(cache, 'r') as fh:
             report = json.load(fh)
     else:
-        g = Github(token)
-        requests = 0
-
-        repo = g.get_repo(uuid)
         requests += 1
 
         report = {}
 
+        update_status('Fetching GitHub API data')
         report['repo'] = repo.raw_data
 
         issues = repo.get_issues(state='all', since=datetime.datetime.now() - datetime.timedelta(days=30))
@@ -84,54 +108,73 @@ def fetch_repo_data(uuid, token):
     if not os.path.exists(cache):
         target = os.path.join('ephemeral_storage', uuid)
         if os.path.exists(target):
+            update_status('Fetching remotes from cached clone')
             repo = git.Repo(target)
             for remote in repo.remotes:
                 remote.fetch()
         else:
+            update_status('Cloning repo')
             repo = git.Repo.clone_from(repo.clone_url, target)     
         import git_analysis
 
+        update_status('Analysing commits')
         repo_data = git_analysis.commits(repo)
         with open(cache, 'w') as fh:
             json.dump(repo_data, fh)
     else:
+        update_status('Load commit from ephemeral cache')
         with open(cache, 'r') as fh:
             repo_data = json.load(fh)
+
+#    for i in range(5000):
+#        import time
+#        update_status('Doing part {}'.format(i))
+#        time.sleep(5);
+
+    # Round off the status so that the last task has an end time.
+    update_status()
 
     repo_data['github'] = report
     return repo_data
  
 
-from concurrent.futures import ProcessPoolExecutor
-
 class RepoReport(BaseHandler):
+    def report_not_ready(self, uuid):
+        user = self.get_current_user()
+        token = user['access_token']
+        self.finish(self.render('report_ready.html', token=token, slug=uuid))
+
     @tornado.web.authenticated
-    def get(self, uuid):
+    def get(self, org_user, repo_name):
+        uuid = '{}/{}'.format(org_user, repo_name)
         datastore = self.settings['datastore']
         if uuid not in datastore:
             # Do what we do with the data handler (return 202 until we are ready)
-            return DataAvailableHandler.get(self, uuid)
+            return self.report_not_ready(uuid)
         else:
             future = datastore[uuid]
             if not future.done():
                 # Do what we do with the data handler (return 202 until we are ready)
-                return DataAvailableHandler.get(self, uuid)
+                return self.report_not_ready(uuid)
             else:
                 import jinja2
                 env = jinja2.Environment(loader=jinja2.FileSystemLoader('./'))
                 template = env.get_template('report.html')
     
-                #repo = git.Repo('ephemeral_storage/SciTools/iris')
-                #repo_data = git_analysis.contributors(repo)
-                #computed = {'contributors': repo_data} 
-                payload = datastore[uuid].result()
-                #self.finish(template.render(payload=payload))
+                try:
+                    payload = datastore[uuid].result()
+                except (KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as err:
+                    import traceback
+                    self.set_status(500)
+                    self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc()))
+                    return
 
                 import plotly
                 import plotly.plotly as py
                 import plotly.graph_objs as go
                 import plotly.offline.offline as pl_offline
-
                 
                 def html(fig):
                     config = dict(showLink=False, displaylogo=False)
@@ -149,7 +192,6 @@ class RepoReport(BaseHandler):
                 import pandas as pd
                 commits = pd.DataFrame.from_dict(payload['commits'])
                 first_commits = commits.drop_duplicates(subset='email')
-
 
                 trace0 = go.Scatter(
                     x=first_commits['date'],
@@ -172,10 +214,12 @@ class RepoReport(BaseHandler):
                     x=commits['date'],
                     y=commits['insertions'].cumsum(),
                     text=commits['sha'],
+                    name='Insertions'
                 )
                 sub = go.Scatter(
                     x=commits['date'],
                     y=commits['deletions'].cumsum(),
+                    name='Deletions'
                 )
                 fig = go.Figure(data=[add, sub])
                 payload['viz']['add_sub'] = html(fig)
@@ -218,6 +262,85 @@ class DataAvailableHandler(BaseHandler):
                             }
                 self.finish(json_encode(response))
 
+    def check_xsrf_cookie(self, *args, **kwargs):
+        # We don't want xsrf checking for this API.
+        pass
+
+    # No authentication needed - pass the github token as TOKEN.
+    def post(self, uuid):
+        from tornado.escape import json_encode
+
+        self.set_header('Content-Type', 'application/json')
+
+        # We could also look for the secret cookie...
+        token = self.get_argument('token', None)
+
+        while token is not None:
+            from github import Github
+            import github.GithubException
+            gh = Github(token)
+
+            try:
+                rate_limiting = gh.rate_limiting
+            except Exception as err:
+                message = str(err)
+                token = None
+                break
+
+            if rate_limiting[0] / float(rate_limiting[0]) < 0.1:
+                message = 'Less than 10% left of your GitHub rate limit ({}/{}).'.format(*gh.rate_limiting)
+                token = None
+                break
+
+            if not set(gh.oauth_scopes).issuperset(set(self.settings['github_scope'])):
+                message = 'Incorrect scopes for the token given token (it has "{}").'.format(', '.join(gh.oauth_scopes))
+                token = None
+
+            break
+        
+        if token is None:
+            self.set_status(401)
+            response = {'status': 401, 'message': message}
+            self.finish(json_encode(response))
+            return
+
+        datastore = self.settings['datastore']
+        executor = self.settings['executor']
+        # TODO: Validation of uuid.
+
+        if uuid not in datastore:
+            future = executor.submit(fetch_repo_data, uuid, token)
+            future._start_time = datetime.datetime.now()
+            datastore[uuid] = future
+
+            # The status code should be set to "Submitted, and processing"
+            self.set_status(202)
+            response = {'status': 202, 'message': 'Job submitted and is processing.', 'status_info': []}
+            self.finish(json_encode(response))
+        else:
+            future = datastore[uuid]
+
+            status_file = os.path.join('ephemeral_storage', uuid + '.status.json')
+            if not os.path.exists(status_file):
+                status = {}
+            else:
+                with open(status_file, 'r') as fh:
+                    status = json.load(fh)
+
+            if future.done():
+                # TODO: Allow query for "ready".
+                # TODO: Result could be the raising of an exception...
+                self.finish(json_encode({'status': 200, 'message': "Done!", 'status_info': status}))
+#                self.finish(json_encode(future.result()))
+            else:
+                self.set_status(202)
+                response = {'status': 202,
+                            'message': ('Job is still running ({}).'
+                                        ''.format(datetime.datetime.now() - future._start_time)),
+                            'status_info': status,
+                            }
+                self.finish(json_encode(response))
+
 
 class MainHandler(BaseHandler):
     def get(self):
@@ -230,8 +353,8 @@ def make_app(**kwargs):
         tornado.web.URLSpec(r'/', MainHandler, name='main'),
         (r'/static/(.*)', tornado.web.StaticFileHandler),
         tornado.web.URLSpec(r'/data/(.*)', DataAvailableHandler, name='data'),
-        tornado.web.URLSpec(r'/report/(.*)', RepoReport),
-        (r'/logout', Logout),
+        tornado.web.URLSpec(r'/report/(\w+)/(\w+)', RepoReport),
+        (r'/logout', GithubAuthLogout),
         ],
         login_url='/oauth', xsrf_cookies=True,
         template_path='templates',
@@ -249,6 +372,7 @@ if __name__ == '__main__':
                    cookie_secret=os.environ['COOKIE_SECRET'],
                    github_scope=['repo', 'user:email'],
                    autoreload=True, debug=True,
+                   default_handler_class=Error404,
                    datastore=datastore)
     app.listen(os.environ.get('PORT', 8888))
 

@@ -29,10 +29,6 @@ class GitHubMixin(tornado.auth.OAuth2Mixin):
             "client_id": client_id,
             "client_secret": client_secret,
         }
-        fields = set(['id', 'name', 'first_name', 'last_name',
-                      'locale', 'picture', 'link'])
-        if extra_fields:
-            fields.update(extra_fields)
         http.fetch(self._oauth_request_token_url(**args),
                    functools.partial(self._on_access_token, callback))
 
@@ -59,7 +55,10 @@ class BaseHandler(tornado.web.RequestHandler, GitHubMixin):
         # At this point, user is either defined, or is None (not logged in).
         if user is not None:
             user = tornado.escape.json_decode(user)
-
+            if not set(user['scope'].split(',')).issuperset(set(self.settings['github_scope'])):
+                # We need to get a new authentication.
+                self.clear_cookie("user")
+                user = None
         return user
 
     def fq_reverse_url(self, name, *args):
@@ -73,7 +72,7 @@ class GithubAuthLogout(BaseHandler):
         next_uri = self.get_argument('next', self.reverse_url('main'),
                                      strip=True)
         self.clear_cookie("user")
-        self.redirect(next)
+        self.redirect(next_uri)
 
 
 class GithubAuthHandler(BaseHandler):

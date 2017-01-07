@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% set title='Uh-oh!' %}
+
+{% block content %}
+Unfortunately there was an error...
+
+<pre>
+{{ traceback }}
+{{ error }}
+</pre>
+
+
+{% endblock %}

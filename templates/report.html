@@ -4,50 +4,28 @@
 {% set repo_slug = payload['github']['repo']['full_name'] %}
 
 
+{% macro panel(title, body) -%}
+<div class="col-sm-12 col-md-6 .col-lg-4">
+<div class="panel panel-default">
+  <div class="panel-heading">{{ title }}</div>
+  <div class="panel-body">
+    {{ body }}
+  </div>
+</div>
+</div>
+{%- endmacro %}
+
+
 {% block content %}
 
-{% for issue in github.issues %}
-    {{ issue.number }}
-{% endfor %}
 
-
-
-<table style="max-width: 80%">
-    <tbody>
-    <tr>
-        <td>
-            First time contributors
-        </td>
-        <td>
-            {{ payload.viz.new_contributors.div }}
-        </td>
-    </tr>
-    <tr>
-        <td>
-            Lines added & removed
-        </td>
-        <td>
-            {{ payload.viz.add_sub.div }}
-        </td>
-    </tr>
-
-    <tr>
-        <td>
-            Commits
-        </td>
-        <td>
-            {{ payload.viz.commits.div }}
-        </td>
-    </tr>
-    </tbody>
-</table>
-
-<br>
-
-
+<div class="row">
+{{ panel('Commits', payload.viz.commits.div) }}
+{{ panel('Insertions and deletions per commit', payload.viz.add_sub.div) }}
+{{ panel('First contributions', payload.viz.new_contributors.div) }}
+</div>
 
 {% endblock %}
-
 
 {% block post_content %}
 {{ super() }}
