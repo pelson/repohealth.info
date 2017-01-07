@@ -1,4 +1,4 @@
-plotly
+plotly>=1.12.12
 tornado
 pandas
 requests
