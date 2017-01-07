@@ -367,7 +367,7 @@ def make_app(**kwargs):
         tornado.web.URLSpec(r'/', MainHandler, name='main'),
         (r'/static/(.*)', tornado.web.StaticFileHandler),
         tornado.web.URLSpec(r'/data/(.*)', DataAvailableHandler, name='data'),
-        tornado.web.URLSpec(r'/report/(\w+)/(\w+)', RepoReport),
+        tornado.web.URLSpec(r'/report/([^/]+)/([^/]+)', RepoReport),
         (r'/logout', GithubAuthLogout),
         ],
         login_url='/oauth', xsrf_cookies=True,
