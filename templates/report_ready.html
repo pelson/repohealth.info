@@ -60,7 +60,8 @@ function redirect_when_ready() {
                       if (data.status == 200) {
                         // TODO: Notify the user in case it doesn't work?
                         $('#status').html('Reloading page now that the resource is available.');
-                        window.location.replace("http://localhost:8888/report/{{ slug }}");
+                        var full = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '');
+                        window.location.replace(full + "{{ url_prefix }}report/{{ slug }}");
                       } else {
                         // Try again in 0.2 seconds.
                         setTimeout(redirect_when_ready, 200);

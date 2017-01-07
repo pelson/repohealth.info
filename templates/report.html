@@ -23,6 +23,7 @@
 {{ panel('Commits', payload.viz.commits.div) }}
 {{ panel('Insertions and deletions per commit', payload.viz.add_sub.div) }}
 {{ panel('First contributions', payload.viz.new_contributors.div) }}
+{{ panel('Stargazers', payload.viz.stargazers.div) }}
 </div>
 
 {% endblock %}
@@ -34,4 +35,5 @@
 {{ payload.viz.new_contributors.script }}
 {{ payload.viz.add_sub.script }}
 {{ payload.viz.commits.script }}
+{{ payload.viz.stargazers.script }}
 {% endblock %}

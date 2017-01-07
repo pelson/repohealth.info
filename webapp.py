@@ -70,7 +70,7 @@ def fetch_repo_data(uuid, token):
         with open(status_file, 'w') as fh:
             json.dump(existing_status, fh)
 
-    cache = os.path.join('ephemeral_storage', uuid + '.json')
+    cache = os.path.join('ephemeral_storage', uuid + '.github.json')
     dirname = os.path.dirname(cache)
     # Ensure the storage location exists.
     if not os.path.exists(dirname):
@@ -78,7 +78,6 @@ def fetch_repo_data(uuid, token):
 
     update_status('Initial validation of repo', clear=True)
     g = Github(token)
-    requests = 0
     repo = g.get_repo(uuid)
 
     if os.path.exists(cache):
@@ -86,20 +85,24 @@ def fetch_repo_data(uuid, token):
         with open(cache, 'r') as fh:
             report = json.load(fh)
     else:
-        requests += 1
 
         report = {}
 
         update_status('Fetching GitHub API data')
         report['repo'] = repo.raw_data
 
+        update_status('Fetching GitHub issues data')
         issues = repo.get_issues(state='all', since=datetime.datetime.now() - datetime.timedelta(days=30))
         
         limit = 5
         issues_raw = [issue.raw_data for issue, _ in zip(issues, range(limit))]
         report['issues'] = issues_raw
 
-        requests += 1
+        update_status('Fetching GitHub stargazer data')
+        stargazers = repo.get_stargazers_with_dates()
+        stargazer_data = [{'starred_at': stargazer.raw_data['starred_at'], 'login': stargazer.raw_data['user']['login']}
+                          for stargazer in stargazers]
+        report['stargazers'] = stargazer_data
 
         with open(cache, 'w') as fh:
             json.dump(report, fh)
@@ -223,6 +226,17 @@ class RepoReport(BaseHandler):
                 )
                 fig = go.Figure(data=[add, sub])
                 payload['viz']['add_sub'] = html(fig)
+
+                
+                stargazers = pd.DataFrame.from_dict(payload['github']['stargazers'])
+                stars = go.Scatter(
+                    x=stargazers['starred_at'],
+                    y=[i + 1 for i in range(len(stargazers['starred_at']))],
+                    text=stargazers['login'],
+                )
+                fig = go.Figure(data=[stars])
+                payload['viz']['stargazers'] = html(fig)
+
 
                 self.finish(self.render('report.html', payload=payload))
 

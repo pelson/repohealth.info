@@ -19,7 +19,10 @@ wget -q https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O
 bash miniconda.sh -b -p $HOME/.conda
 $HOME/.conda/bin/conda install --yes -c defaults -c conda-forge \
          gitpython pygithub jinja2 tornado requests pandas nomkl pip
-$HOME/.conda/bin/pip install -r requirements.txt --yes
+$HOME/.conda/bin/pip install -r requirements.txt
+
+# We want the new get_stargazers_with_dates (https://github.com/PyGithub/PyGithub/pull/347) which isn't in a release yet.
+$HOME/.conda/bin/pip install https://github.com/PyGithub/PyGithub --upgrade
 
 cp -rf $HOME/.conda $STORAGE_LOCN/.conda
 
