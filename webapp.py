@@ -9,6 +9,8 @@ import tornado.autoreload
 import tornado.ioloop
 import tornado.web
 
+from github import Github
+import github.GithubException
 from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout
 
 
@@ -33,6 +35,7 @@ class BaseHandler(OAuthBase):
             'xsrf_token': self.xsrf_token,
             'xsrf_form_html': self.xsrf_form_html,
             'authenticated': self.get_current_user() is not None,
+            'user': self.get_current_user(),
             'handler': self
         })
         content = self.render_template(template_name, **kwargs)
@@ -47,7 +50,6 @@ class Error404(BaseHandler):
 
 
 def fetch_repo_data(uuid, token):
-    from github import Github
     import git 
 
     def update_status(message=None, clear=False):
@@ -92,7 +94,7 @@ def fetch_repo_data(uuid, token):
         report['repo'] = repo.raw_data
 
         update_status('Fetching GitHub issues data')
-        issues = repo.get_issues(state='all', since=datetime.datetime.now() - datetime.timedelta(days=30))
+        issues = repo.get_issues(state='all', since=datetime.datetime.utcnow() - datetime.timedelta(days=30))
         
         limit = 5
         issues_raw = [issue.raw_data for issue, _ in zip(issues, range(limit))]
@@ -139,13 +141,34 @@ def fetch_repo_data(uuid, token):
 
     repo_data['github'] = report
     return repo_data
- 
+
+
+def pretty_timedelta(datetime, from_date):
+    diff = from_date - datetime
+    s = diff.seconds
+    if diff.days > 7 or diff.days < 0:
+        return datetime.strftime('%d %b %y')
+    elif diff.days == 1:
+        return '1 day ago'
+    elif diff.days > 1:
+        return '{} days ago'.format(diff.days)
+    elif s <= 1:
+        return 'just now'
+    elif s < 120:
+        return '{} seconds ago'.format(s)
+    elif s < 3600:
+        return '{} minutes ago'.format(s//60)
+    elif s < 7200:
+        return '1 hour ago'
+    else:
+        return '{} hours ago'.format(s//3600)
+
 
 class RepoReport(BaseHandler):
     def report_not_ready(self, uuid):
         user = self.get_current_user()
         token = user['access_token']
-        self.finish(self.render('report_ready.html', token=token, slug=uuid))
+        self.finish(self.render('report_ready.html', token=token, repo_slug=uuid))
 
     @tornado.web.authenticated
     def get(self, org_user, repo_name):
@@ -171,7 +194,7 @@ class RepoReport(BaseHandler):
                 except Exception as err:
                     import traceback
                     self.set_status(500)
-                    self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc()))
+                    self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(), repo_slug=uuid))
                     return
 
                 import plotly
@@ -242,40 +265,40 @@ class RepoReport(BaseHandler):
 
 
 class DataAvailableHandler(BaseHandler):
-    @tornado.web.authenticated
-    def get(self, uuid):
-        from tornado.escape import json_encode
-
-        self.set_header('Content-Type', 'application/json')
-
-        datastore = self.settings['datastore']
-        executor = self.settings['executor']
-        # TODO: Validation of uuid.
-
-        if uuid not in datastore:
-            user = self.get_current_user()
-            token = user['access_token']
-            future = executor.submit(fetch_repo_data, uuid, token)
-            future._start_time = datetime.datetime.now()
-            datastore[uuid] = future
-
-            # The status code should be set to "Submitted, and processing"
-            self.set_status(202)
-            response = {'status': 202, 'message': 'Job submitted and is processing.'}
-            self.finish(json_encode(response))
-        else:
-            future = datastore[uuid]
-            if future.done():
-                # TODO: Result could be the raising of an exception...
-                self.finish(json_encode(future.result()))
-            else:
-                self.set_status(202)
-                response = {'status': 202,
-                            'message': ('Job is still running ({}).'
-                                        ''.format(datetime.datetime.now() - future._start_time)),
-                            }
-                self.finish(json_encode(response))
-
+#    @tornado.web.authenticated
+#    def get(self, uuid):
+#        from tornado.escape import json_encode
+#
+#        self.set_header('Content-Type', 'application/json')
+#
+#        datastore = self.settings['datastore']
+#        executor = self.settings['executor']
+#        # TODO: Validation of uuid.
+#
+#        if uuid not in datastore:
+#            user = self.get_current_user()
+#            token = user['access_token']
+#            future = executor.submit(fetch_repo_data, uuid, token)
+#            future._start_time = datetime.datetime.now()
+#            datastore[uuid] = future
+#
+#            # The status code should be set to "Submitted, and processing"
+#            self.set_status(202)
+#            response = {'status': 202, 'message': 'Job submitted and is processing.'}
+#            self.finish(json_encode(response))
+#        else:
+#            future = datastore[uuid]
+#            if future.done():
+#                # TODO: Result could be the raising of an exception...
+#                self.finish(json_encode(future.result()))
+#            else:
+#                self.set_status(202)
+#                response = {'status': 202,
+#                            'message': ('Job is still running ({}).'
+#                                        ''.format(pretty_timedelta(future._start_time, datetime.datetime.utcnow()))),
+#                            }
+#                self.finish(json_encode(response))
+#
     def check_xsrf_cookie(self, *args, **kwargs):
         # We don't want xsrf checking for this API.
         pass
@@ -290,13 +313,11 @@ class DataAvailableHandler(BaseHandler):
         token = self.get_argument('token', None)
 
         while token is not None:
-            from github import Github
-            import github.GithubException
             gh = Github(token)
 
             try:
                 rate_limiting = gh.rate_limiting
-            except Exception as err:
+            except github.GithubException as err:
                 message = str(err)
                 token = None
                 break
@@ -318,13 +339,23 @@ class DataAvailableHandler(BaseHandler):
             self.finish(json_encode(response))
             return
 
+        gh = Github(token)
+
+        try:
+            repo = gh.get_repo(uuid)
+            repo.id
+        except github.GithubException:
+            self.set_status(422)
+            response = {'status': 422, 'message': "The repo '{}' could not be found.".format(uuid)}
+            self.finish(json_encode(response))
+            return
+
         datastore = self.settings['datastore']
         executor = self.settings['executor']
-        # TODO: Validation of uuid.
 
         if uuid not in datastore:
             future = executor.submit(fetch_repo_data, uuid, token)
-            future._start_time = datetime.datetime.now()
+            future._start_time = datetime.datetime.utcnow()
             datastore[uuid] = future
 
             # The status code should be set to "Submitted, and processing"
@@ -350,7 +381,7 @@ class DataAvailableHandler(BaseHandler):
                 self.set_status(202)
                 response = {'status': 202,
                             'message': ('Job is still running ({}).'
-                                        ''.format(datetime.datetime.now() - future._start_time)),
+                                        ''.format(pretty_timedelta(future._start_time, datetime.datetime.utcnow()))),
                             'status_info': status,
                             }
                 self.finish(json_encode(response))
@@ -360,6 +391,13 @@ class MainHandler(BaseHandler):
     def get(self):
         self.render("index.html")
 
+    def post(self):
+        slug = self.get_argument('slug', None)
+        if slug is None or slug.count('/') != 1:
+            self.set_status(400)
+            self.finish(self.render('index.html', content='Please enter a valid GitHub repository.', repo_slug=slug))
+        else:
+            self.redirect('/report/{}'.format(slug))
 
 def make_app(**kwargs):
     app = tornado.web.Application([

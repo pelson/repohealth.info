@@ -21,7 +21,8 @@ class GitHubMixin(tornado.auth.OAuth2Mixin):
     @tornado.auth._auth_return_future
     def get_authenticated_user(self, redirect_uri, client_id, client_secret,
                                code, callback, extra_fields=None):
-    
+   
+
         http = self.get_auth_http_client()
         args = {
             "redirect_uri": redirect_uri,
@@ -29,12 +30,14 @@ class GitHubMixin(tornado.auth.OAuth2Mixin):
             "client_id": client_id,
             "client_secret": client_secret,
         }
+        # Use tornado's async http client to fetch the token URL, and execute
+        # the given callback
         http.fetch(self._oauth_request_token_url(**args),
                    functools.partial(self._on_access_token, callback))
 
     def _on_access_token(self, future, response):
         args = parse_qs(response.body)
-
+        print('Code', response.code, response.body)
         if response.error or 'error' in args:
             raise ValueError(response.body)
             future.set_exception(tornado.auth.AuthError('GitHub auth error: %s' % str(response)))
@@ -59,6 +62,10 @@ class BaseHandler(tornado.web.RequestHandler, GitHubMixin):
                 # We need to get a new authentication.
                 self.clear_cookie("user")
                 user = None
+            
+            if float(user.get('version', 0)) < GithubAuthHandler.cookie_version:
+                self.clear_cookie("user")
+                user = None
         return user
 
     def fq_reverse_url(self, name, *args):
@@ -76,10 +83,13 @@ class GithubAuthLogout(BaseHandler):
 
 
 class GithubAuthHandler(BaseHandler):
+    # Keep track of the version of the authentication cookie. If we make any changes
+    # then increment this to invalidate and re-authenticate.
+    cookie_version = 1.3
+
     @tornado.gen.coroutine
     def get(self):
         next_uri = self.get_argument('next', self.fq_reverse_url('main'), strip=True)
-        print('NEXT:', next_uri)
         auth_uri = tornado.httputil.url_concat(self.fq_reverse_url('auth_github'),
                                                dict(next=next_uri))
 
@@ -92,7 +102,8 @@ class GithubAuthHandler(BaseHandler):
             return
 
         # If we are already authorized, just continue on through.
-        if self.get_current_user():
+        current_user = self.get_current_user()
+        if current_user and float(current_user.get('version', 0)) >= self.cookie_version:
             self.redirect(next_uri)
             return
 
@@ -106,7 +117,6 @@ class GithubAuthHandler(BaseHandler):
                 code=self.get_argument('code'),
                 callback=self._on_auth,
                 )
-            print('Access:', access)
             self.redirect(next_uri)
             return
 
@@ -119,18 +129,27 @@ class GithubAuthHandler(BaseHandler):
                 scope=self.settings['github_scope'])
 
 
-    def _on_auth(self, user, access_token=None):
-        if not user:
-            raise tornado.web.HTTPError(500, "Github auth failed")
+    def _on_auth(self, response_json):
+        if not response_json:
             self.clear_cookie("user")
-            return
+            raise tornado.web.HTTPError(500, "Github auth failed")
+
+        if 'error' in response_json:
+            self.clear_cookie("user")
+            raise tornado.web.HTTPError(500, "Github auth failed")
+
+        user = response_json
+
+        from github import Github
+        gh = Github(user.get('access_token', 'not a valid token'))
+        auth_user = gh.get_user()
+        user['login'] = auth_user.login
+        user['avatar_url'] = auth_user.avatar_url
+        user['html_url'] = auth_user.html_url
+        user['version'] = self.cookie_version
 
         user = tornado.escape.json_encode(user)
-        if 'error' in user:
-            self.clear_cookie("user")
-            raise tornado.web.HTTPError(500, "Github auth failed")
-
-        self.set_secure_cookie("user", user, expires_days=1)
+        self.set_secure_cookie("user", user, expires_days=5)
 
 
 class GistLister(BaseHandler):

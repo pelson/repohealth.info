@@ -23,13 +23,41 @@ body {
   font-size: x-large;
   color: gray;
 }
-
+.branding a:hover {
+    text-decoration: none;
+}
 .branding i {
   vertical-align: middle;
 }
 
-.small-plot {
-   width: 40%;
-   min-width: 700px;
-   height: 40%;
+.inline-icon {
+    vertical-align: middle;
+}
+
+.row-centered {
+    text-align:center;
+}
+.col-centered {
+    display:inline-block;
+    float:none;
+    /* reset the text-align */
+    text-align:left;
+    /* inline-block space fix */
+    margin-right:-4px;
+}
+
+.notification-icon {
+    text-align:center;
+    margin: 0.5em;
+}
+
+.no-box-shadow {
+    box-shadow: 0 0 0px black;
+    padding:0 15px 0 15px;
+    border: 0;
+}
+
+#status_log li {
+    min-height: 3.5em;
+    padding-top: 1em;
 }

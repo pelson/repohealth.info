@@ -1,25 +1,22 @@
 {% extends "base.html" %}
 
+{% set devel=False %}
+
 {% block content %}
-
-            <div class="card">
-                <i class="fa fa-spinner fa-pulse fa-5x fa-5x fa-fw"></i>
-                  <h3 class="card-header">Featured</h3>
-                    <div class="card-block">
-                            <h4 class="card-title">Special title treatment</h4>
-                            <p class="card-text">
-<div>
-<span class="sr-only">Loading...</span>
-</div>
-
-<i class="fa fa-wrench faa-wrench animated"></i>
-
-<ul id="log"></ul>
-<div id="status"></div>
-
-</div>
+<div class="row row-centered">
+    <div class="panel col-md-6 col-centered no-box-shadow">
+        <div style="text-align: center">
+            <i id="status_icon" class="notification-icon fa fa-spinner fa-pulse fa-fw" style="font-size: 9em;"></i>
+            <h3 class="h3">Fetching report data for "{{ repo_slug }}"</h3>
+            <span class="h4" style="padding-right: 1em;">Response:</span>
+            <span id="status_message">{% if devel %}Server response{% endif %}</span>
+        </div>
+        <div>
+            <ul id="status_log" class="fa-ul" style="">
+            </ul>
+        </div>
     </div>
-
+</div>
 
 {% endblock %}
 
@@ -27,55 +24,70 @@
 {{ super() }}
 <script>
 
+function show_status(status_info) {
+    var cList = $('ul#status_log');
+    lis = cList.find('li');
+    for (i = 0; i < status_info.length; i++) {
+        if (i >= lis.length) {
+            var li = $('<li/>').attr("id", "status-log-" + i).appendTo(cList);
+            var spinner = $('<div/>').appendTo(li);
+            $('<i/>').addClass('inline-icon fa-li fa fa-cog fa-spin fa-3x fa-fw').appendTo(spinner);
+            var message = $('<span/>').addClass('status-message').appendTo(spinner);
+        } else {
+            li = $('#status-log-' + i)
+            message = li.find('.status-message');
+        }
+        var status = status_info[i];
+        if (status_info[i].end !== undefined) {
+            spinner = $(li.find('.inline-icon')[0]);
+            spinner.removeClass('fa-cog fa-spin');
+            spinner.addClass('fa-check');
+        } 
+
+        message.html(status_info[i].status);
+    }
+}
+
 function redirect_when_ready() {
     $.ajax({
-            url: "/data/{{ slug }}",
+            url: "/data/{{ repo_slug }}",
             method: "POST",
             data: {token: '{{ token }}'},
             success: function( data ) {
-                      $('#status').html(data.message);
-                      console.log(data);
-
-                    var cList = $('ul#log');
-                    lis = cList.find('li');
-                    for (i = 0; i < data.status_info.length; i++) {
-                        if (i >= lis.length) {
-                            var li = $('<li/>').attr("id", "status-" + i).appendTo(cList);
-                            var message = $('<div/>').addClass('status-message').appendTo(li);
-                            var spinner = $('<div/>').addClass('spinny').appendTo(li);
-                            spinner.html('<i class="fa fa-cog fa-spin fa-3x fa-fw"></i>');
-                        } else {
-                            li = $('#status-' + i)
-                            message = li.find('.status-message');
-                        }
-                        var status = data.status_info[i];
-                        if (data.status_info[i].end !== undefined) {
-                            spinner = $(li.find('.spinny')[0]);
-                            spinner.html('<i class="fa fa-check"></i>');
-                        } 
-
-                        message.text(data.status_info[i].status);
-                    }
+                      $('#status_message').html(data.message);
+                      show_status(data.status_info);                        
 
                       if (data.status == 200) {
                         // TODO: Notify the user in case it doesn't work?
-                        $('#status').html('Reloading page now that the resource is available.');
+                        $('#status_message').html('Reloading page now that the resource is available.');
                         var full = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '');
-                        window.location.replace(full + "{{ url_prefix }}report/{{ slug }}");
+                        window.location.replace(full + "{{ url_prefix }}report/{{ repo_slug }}");
                       } else {
                         // Try again in 0.2 seconds.
                         setTimeout(redirect_when_ready, 200);
                       }
                      },
             error: function(data, hmmm, status) {
-                                                 console.log(data);
+                                                 $('#status_message').html(data.responseJSON.message);
+                                                 $('#status_icon').removeClass('fa-spinner fa-pulse');
+                                                 $('#status_icon').addClass('fa-exclamation-triangle');
 
-                                                 $('#status').html(data.responseJSON.message);
                                                  }
     });
 };
 
+
+{% if not devel %}
 redirect_when_ready();
+{% else %}
+status_info=[{status:"Doing a thing", start:"a date"},
+             {status:"Done a thing", start:"a date", end:"a date"},
+             {status:"Done a really really really really really really really wordy thing that might even have <strong>HTML</strong> in it.", start:"a date", end:"a date"},
+             ];
+show_status(status_info);
+
+{% endif %}
+
 </script>
 
 {% endblock %}
