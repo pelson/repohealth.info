@@ -252,6 +252,8 @@ class RepoReport(BaseHandler):
 
                 
                 stargazers = pd.DataFrame.from_dict(payload['github']['stargazers'])
+                if len(stargazers) == 0:
+                    stargazers = {'starred_at': [], 'login': []}
                 stars = go.Scatter(
                     x=stargazers['starred_at'],
                     y=[i + 1 for i in range(len(stargazers['starred_at']))],
@@ -265,40 +267,6 @@ class RepoReport(BaseHandler):
 
 
 class DataAvailableHandler(BaseHandler):
-#    @tornado.web.authenticated
-#    def get(self, uuid):
-#        from tornado.escape import json_encode
-#
-#        self.set_header('Content-Type', 'application/json')
-#
-#        datastore = self.settings['datastore']
-#        executor = self.settings['executor']
-#        # TODO: Validation of uuid.
-#
-#        if uuid not in datastore:
-#            user = self.get_current_user()
-#            token = user['access_token']
-#            future = executor.submit(fetch_repo_data, uuid, token)
-#            future._start_time = datetime.datetime.now()
-#            datastore[uuid] = future
-#
-#            # The status code should be set to "Submitted, and processing"
-#            self.set_status(202)
-#            response = {'status': 202, 'message': 'Job submitted and is processing.'}
-#            self.finish(json_encode(response))
-#        else:
-#            future = datastore[uuid]
-#            if future.done():
-#                # TODO: Result could be the raising of an exception...
-#                self.finish(json_encode(future.result()))
-#            else:
-#                self.set_status(202)
-#                response = {'status': 202,
-#                            'message': ('Job is still running ({}).'
-#                                        ''.format(pretty_timedelta(future._start_time, datetime.datetime.utcnow()))),
-#                            }
-#                self.finish(json_encode(response))
-#
     def check_xsrf_cookie(self, *args, **kwargs):
         # We don't want xsrf checking for this API.
         pass
@@ -375,8 +343,14 @@ class DataAvailableHandler(BaseHandler):
 
             if future.done():
                 # TODO: Allow query for "ready".
-                # TODO: Result could be the raising of an exception...
-                self.finish(json_encode({'status': 200, 'message': "Done!", 'status_info': status}))
+                try:
+                    self.finish(json_encode({'status': 200, 'message': "Done!", 'status_info': status}))
+                except Exception as err:
+                    import traceback
+                    self.set_status(500)
+                    self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(),
+                                repo_slug=uuid))
+                    return
 #                self.finish(json_encode(future.result()))
             else:
                 self.set_status(202)
@@ -396,9 +370,10 @@ class MainHandler(BaseHandler):
         slug = self.get_argument('slug', None)
         if slug is None or slug.count('/') != 1:
             self.set_status(400)
-            self.finish(self.render('index.html', content='Please enter a valid GitHub repository.', repo_slug=slug))
+            self.finish(self.render('index.html', input_error='Please enter a valid GitHub repository.', repo_slug=slug))
         else:
             self.redirect('/report/{}'.format(slug))
+
 
 def make_app(**kwargs):
     app = tornado.web.Application([

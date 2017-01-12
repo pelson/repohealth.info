@@ -3,8 +3,83 @@
 {% set title='GitHub repository health report' %}
 
 {% block content %}
-{{ input_error }}
 
-<p>Hello from the index...</p>
+
+<div class="row">
+  <div class="col-sm-12 centered">
+    <div class="thumbnail centered" style="background-color: #ffff80; padding: 1em;">
+    <h3>
+        Measure the health of your favourite GitHub repositories
+    </h3>
+    </div>
+  </div>
+  <div class="row-centered no-drop-shadow">
+    <div class="col-centered col-sm-6 thumbnail centered no-box-shadow">
+    {% if input_error %}
+    <div class="alert alert-danger" role="alert">
+        {{ input_error }}
+    </div>
+    {% endif %}
+      <form method="POST" action="/">
+          <div class="input-group">
+              <input type="text" size=40 class="form-control" placeholder="Enter a repo" value="{{ repo_slug }}" name="slug">
+              <span class="input-group-btn">
+                  <button class="btn btn-secondary" type="submit"><i class="fa fa-medkit faa-ring animated-hover"></i></button>
+              </span>
+        </div>
+        {{ handler.xsrf_form_html() }}
+      </form>
+    </div>
+  </div>
+
+  <div class="col-sm-6">
+    <div class="thumbnail centered thumb-min-height">
+      <i class="fa fa-5x fa-github"></i>
+      <div class="caption">
+        <h3>1. Enter the repository</h3>
+        <p>Give us the repository name as well as the organisation or user under which it lives. For example, pandas can be found 
+        with "<a href="/report">pandas-dev/pandas</a>".</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6">
+    <div class="thumbnail centered thumb-min-height">
+      <i class="fa fa-5x fa-coffee"></i>
+      <div class="caption">
+        <h3>2. Grab a coffee</h3>
+        <p>We'll clone the repository to crunch some vital statistics, and then combine these with data from GitHub's API.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="clearfix"></div>
+
+  <div class="col-sm-6">
+    <div class="thumbnail centered thumb-min-height">
+      <i class="fa fa-5x fa-line-chart"></i>
+      <div class="caption">
+        <h3>3. Analyse</h3>
+        <p>We don't provide a health "score", instead take a look at several indicators of repository health and draw
+        your own conclusions.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-sm-6">
+    <div class="thumbnail centered thumb-min-height">
+      <i class="fa fa-5x fa-plus"></i>
+      <div class="caption">
+        <h3>4. Extend</h3>
+        <p>Your analysis doesn't need to stop there. You can use our API to fetch the data to do your own analysis.
+        If you'd like to contribute a health indicator to the repo-health-report pull-requests are welcome at
+        <a href="https://github.com/pelson/repo-health-report"><i class="fa fa-fw fa-github"></i>pelson/repo-health-report</a></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="clearfix"></div>
+
+</div>
 
 {% endblock %}

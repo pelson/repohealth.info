@@ -26,17 +26,33 @@ body {
 .branding a:hover {
     text-decoration: none;
 }
+
 .branding i {
   vertical-align: middle;
+}
+
+.padding-top {
+    padding-top: 4em;
+    display: block;
+}
+
+.thumb-min-height {
+    padding-top: 1em;
+    min-height: 16.2em;
+}
+
+.thumb-min-height .caption {
+    padding-bottom: 0px;
 }
 
 .inline-icon {
     vertical-align: middle;
 }
 
-.row-centered {
+.row-centered, .centered {
     text-align:center;
 }
+
 .col-centered {
     display:inline-block;
     float:none;
@@ -54,7 +70,8 @@ body {
 .no-box-shadow {
     box-shadow: 0 0 0px black;
     padding:0 15px 0 15px;
-    border: 0;
+    border: 0px;
+    border-radius: 0px;
 }
 
 #status_log li {

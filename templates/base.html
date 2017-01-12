@@ -92,15 +92,18 @@
           <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">
             <img alt="Creative Commons Licence" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/80x15.png" />
           </a>
-          | Created by <a href="https://github.com/pelson">Phil Elson</a> | About
+          | Created by <a href="https://github.com/pelson">Phil Elson</a> | <a href="https://github.com/pelson/repo-health-report"><i class="fa fa-github fa-lg fa-fw inline-icon"></i>Contribute</a>
         </p>
 
         </div>
     </footer>
 
     {% block post_content %}
-    <script src="{{ url_prefix }}static/js/jquery-3.1.1.min.js"></script>
-    <script src="{{ url_prefix }}static/bootstrap-3.3.7-dist/js/bootstrap.min.js"></script>
+    <script src="{{ handler.static_url("js/jquery-3.1.1.min.js") }}"></script>
+    <script src="{{ handler.static_url("bootstrap-3.3.7-dist/js/bootstrap.min.js") }}"></script>
+
+</script>
+
     {% endblock %}
 
     <script>
