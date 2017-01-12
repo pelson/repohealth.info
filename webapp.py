@@ -355,7 +355,7 @@ class DataAvailableHandler(BaseHandler):
             else:
                 self.set_status(202)
                 response = {'status': 202,
-                            'message': ('Job is still running ({}).'
+                            'message': ('Job is still running and started {}.'
                                         ''.format(pretty_timedelta(future._start_time, datetime.datetime.utcnow()))),
                             'status_info': status,
                             }
