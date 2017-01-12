@@ -168,7 +168,7 @@ class RepoReport(BaseHandler):
     def report_not_ready(self, uuid):
         user = self.get_current_user()
         token = user['access_token']
-        self.finish(self.render('report_ready.html', token=token, repo_slug=uuid))
+        self.finish(self.render('report.pending.html', token=token, repo_slug=uuid))
 
     @tornado.web.authenticated
     def get(self, org_user, repo_name):
@@ -315,6 +315,7 @@ class DataAvailableHandler(BaseHandler):
         while token is not None:
             gh = Github(token)
 
+            # Try to get the user's rate limit. This will fail if we have a bad token.
             try:
                 rate_limiting = gh.rate_limiting
             except github.GithubException as err:
