@@ -474,5 +474,14 @@ if __name__ == '__main__':
     executor = ProcessPoolExecutor()
     app.settings['executor'] = executor
 
-    tornado.autoreload.add_reload_hook(executor.shutdown)
+    if DEBUG:
+        tornado.autoreload.add_reload_hook(executor.shutdown)
+
+    def keep_alive(*args):
+        # Keeps the heroku process from idling by fetching the logo every 4 minutes.
+        import requests
+        requests.get('https://repo-health-report.herokuapp.com/static/img/heart.png')
+        
+    tornado.ioloop.PeriodicCallback(keep_alive, 4 * 60 * 1000).start()
+
     tornado.ioloop.IOLoop.instance().start()
