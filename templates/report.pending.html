@@ -50,7 +50,7 @@ function show_status(status_info) {
 
 function redirect_when_ready() {
     $.ajax({
-            url: "/data/{{ repo_slug }}",
+            url: "/api/request/{{ repo_slug }}",
             method: "POST",
             data: {token: '{{ token }}'},
             success: function( data ) {
@@ -58,24 +58,20 @@ function redirect_when_ready() {
                       show_status(data.status_info);                        
 
                       if (data.status == 200) {
-                        // TODO: Notify the user in case it doesn't work?
                         $('#status_message').html('Reloading page now that the resource is available.');
-                        var full = location.protocol+'//'+location.hostname+(location.port ? ':'+location.port: '');
-                        window.location.replace(full + "{{ url_prefix }}report/{{ repo_slug }}");
+                        location.reload();
                       } else {
-                        // Try again in 0.2 seconds.
-                        setTimeout(redirect_when_ready, 200);
+                        setTimeout(redirect_when_ready, 1000);
                       }
                      },
             error: function(data, hmmm, status) {
+                                                 $('#status_message').html('An error occured');
                                                  $('#status_message').html(data.responseJSON.message);
                                                  $('#status_icon').removeClass('fa-spinner fa-pulse');
                                                  $('#status_icon').addClass('fa-exclamation-triangle');
-
                                                  }
     });
 };
-
 
 {% if not devel %}
 redirect_when_ready();
@@ -85,9 +81,7 @@ status_info=[{status:"Doing a thing", start:"a date"},
              {status:"Done a really really really really really really really wordy thing that might even have <strong>HTML</strong> in it.", start:"a date", end:"a date"},
              ];
 show_status(status_info);
-
 {% endif %}
-
 </script>
 
 {% endblock %}

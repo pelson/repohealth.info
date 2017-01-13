@@ -3,3 +3,4 @@ tornado
 pandas
 requests
 numpy
+nbformat

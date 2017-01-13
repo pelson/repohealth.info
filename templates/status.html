@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+{% for uuid, future in futures.items() %}
+<li>{{ uuid }}, {{future }}, {{ future.running() }}</li>
+{% endfor %}
+{% endblock %}

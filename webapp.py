@@ -1,23 +1,33 @@
 from concurrent.futures import ProcessPoolExecutor
+from collections import OrderedDict
 import datetime
 import os
 import json
+import textwrap
 import time
 
-from jinja2 import Environment, FileSystemLoader 
+
+import jinja2
 import tornado.autoreload
 import tornado.ioloop
 import tornado.web
+from tornado.escape import json_encode
 
+import nbformat
+import nbformat.v4 as nbf
+
+import git 
 from github import Github
 import github.GithubException
 from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout
+
+import git_analysis
 
 
 class BaseHandler(OAuthBase):
     def render_template(self, template_name, **kwargs):
         template_dirs = self.settings["template_path"]
-        env = Environment(loader=FileSystemLoader(template_dirs))
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_dirs))
         template = env.get_template(template_name)
         content = template.render(kwargs)
         return content
@@ -50,7 +60,6 @@ class Error404(BaseHandler):
 
 
 def fetch_repo_data(uuid, token):
-    import git 
 
     def update_status(message=None, clear=False):
         status_file = os.path.join('ephemeral_storage', uuid + '.status.json')
@@ -120,7 +129,6 @@ def fetch_repo_data(uuid, token):
         else:
             update_status('Cloning repo')
             repo = git.Repo.clone_from(repo.clone_url, target)     
-        import git_analysis
 
         update_status('Analysing commits')
         repo_data = git_analysis.commits(repo)
@@ -130,11 +138,6 @@ def fetch_repo_data(uuid, token):
         update_status('Load commit from ephemeral cache')
         with open(cache, 'r') as fh:
             repo_data = json.load(fh)
-
-#    for i in range(5000):
-#        import time
-#        update_status('Doing part {}'.format(i))
-#        time.sleep(5);
 
     # Round off the status so that the last task has an end time.
     update_status()
@@ -173,6 +176,10 @@ class RepoReport(BaseHandler):
     @tornado.web.authenticated
     def get(self, org_user, repo_name):
         uuid = '{}/{}'.format(org_user, repo_name)
+        format = self.get_argument('format', 'html')
+        if format not in ['notebook', 'html']:
+            self.set_status(400)
+            return self.finish(self.render('error.html', error="Invalid format specified. Please choose either 'notebook' or 'html'.", repo_slug=uuid))
         datastore = self.settings['datastore']
         if uuid not in datastore:
             # Do what we do with the data handler (return 202 until we are ready)
@@ -183,10 +190,6 @@ class RepoReport(BaseHandler):
                 # Do what we do with the data handler (return 202 until we are ready)
                 return self.report_not_ready(uuid)
             else:
-                import jinja2
-                env = jinja2.Environment(loader=jinja2.FileSystemLoader('./'))
-                template = env.get_template('report.html')
-    
                 try:
                     payload = datastore[uuid].result()
                 except (KeyboardInterrupt, SystemExit):
@@ -214,110 +217,138 @@ class RepoReport(BaseHandler):
                                     'id': plotdivid}
                     return plot_content
 
-                payload['viz'] = {}
-                import pandas as pd
-                commits = pd.DataFrame.from_dict(payload['commits'])
-                first_commits = commits.drop_duplicates(subset='email')
+                from analysis import PLOTLY_PLOTS
 
-                trace0 = go.Scatter(
-                    x=first_commits['date'],
-                    y=[i + 1 for i in range(len(first_commits['date']))],
-                    text=first_commits['name'],
-                )
-                fig = go.Figure(data=[trace0])
-                payload['viz']['new_contributors'] = html(fig)
+                visualisations = OrderedDict()
 
-                
-                trace0 = go.Scatter(
-                    x=commits['date'],
-                    y=[i + 1 for i in range(len(commits['date']))]
-                )
-                fig = go.Figure(data=[trace0])
-                payload['viz']['commits'] = html(fig)
+                for key, title, mod in PLOTLY_PLOTS:
+                    prep_fn_name = '{}_prep'.format(key)
+                    viz_fn_name = '{}_viz'.format(key)
+                    prepare = getattr(mod, prep_fn_name)
+                    viz = getattr(mod, viz_fn_name)
+                    
+                    data = prepare(payload)
+                    fig = viz(data)
 
+                    visualisation = html(fig)
+                    del fig
 
-                add = sub = go.Scatter(
-                    x=commits['date'],
-                    y=commits['insertions'].cumsum(),
-                    text=commits['sha'],
-                    name='Insertions'
-                )
-                sub = go.Scatter(
-                    x=commits['date'],
-                    y=commits['deletions'].cumsum(),
-                    name='Deletions'
-                )
-                fig = go.Figure(data=[add, sub])
-                payload['viz']['add_sub'] = html(fig)
+                    with open(mod.__file__, 'r') as fh:
+                        mod_source = fh.readlines()
+                    code = ''.join(mod_source + 
+                                     ["\n\n",
+                                      "{} = {}(payload)\n".format(key, prep_fn_name),
+                                      "iplot({}({}))\n".format(viz_fn_name, key),
+                                      ])
 
-                
-                stargazers = pd.DataFrame.from_dict(payload['github']['stargazers'])
-                if len(stargazers) == 0:
-                    stargazers = {'starred_at': [], 'login': []}
-                stars = go.Scatter(
-                    x=stargazers['starred_at'],
-                    y=[i + 1 for i in range(len(stargazers['starred_at']))],
-                    text=stargazers['login'],
-                )
-                fig = go.Figure(data=[stars])
-                payload['viz']['stargazers'] = html(fig)
+                    visualisation['code'] = code
+                    visualisation['title'] = title
+
+                    visualisations[key] = visualisation
 
 
-                self.finish(self.render('report.html', payload=payload))
+                if format == 'notebook':
+                    nb = nbf.new_notebook()
+                    nb.cells.append(nbf.new_markdown_cell(textwrap.dedent('''
+                            ![Health report](https://repo-health-report.herokuapp.com/static/img/heart.png)
+
+                            <h1>Health report for {slug}</h1>
+
+                            <h3>About this notebook</h3>
+
+                            This notebook was originally generated by https://repo-health-report.herokuapp.com/.
+                            You can see the latest version of this report at https://repo-health-report.herokuapp.com/report/{slug}.
+
+                            **Please note:** This notebook requires python 3 and plotly.
+                            '''.format(slug=uuid))))
+
+                    nb.cells.append(nbf.new_code_cell(
+                        '\n'.join(['# The following data can be retrieved from https://repo-health-report.herokuapp.com/api/data/{}'.format(uuid),
+                         'import json',
+                         'payload = json.loads(r"""',
+                         json.dumps(payload),
+                         '""".strip())',
+                         ''])))
+                    nb.cells.append(nbf.new_markdown_cell("Now, let's initialise plotly, and to recreate the visualisations on https://repo-health-report.herokuapp.com."))
+                    nb.cells.append(nbf.new_code_cell(['from plotly.offline import iplot, init_notebook_mode\n', 'init_notebook_mode()']))
+                    for visualisation in visualisations.values():
+                        nb.cells.append(nbf.new_markdown_cell(visualisation['title']))
+                        nb.cells.append(nbf.new_code_cell(visualisation['code']))
+                       
+                    content = nbformat.writes(nb, version=4)
+                    self.set_header("Content-Type", 'application/x-ipynb+json')
+                    self.set_header("Content-Disposition", 'attachment; filename="health_{}.ipynb"'.format(uuid.replace('/', '_')))
+                    return self.finish(content)
+                    
+                else:
+                    self.finish(self.render('report.html', payload=payload, viz=visualisations, repo_slug=uuid))
 
 
-class DataAvailableHandler(BaseHandler):
+class Status(BaseHandler):
+    @tornado.web.authenticated
+    def get(self):
+        user = self.get_current_user()
+        # TODO: We should define an admin group...
+        if user['login'] == 'pelson':
+            self.finish(self.render('status.html', futures=self.settings['datastore']))
+
+
+class APIDataAvailableHandler(BaseHandler):
+    known_uuid = []
+    known_tokens = []
+
     def check_xsrf_cookie(self, *args, **kwargs):
-        # We don't want xsrf checking for this API.
+        # We don't want xsrf checking for this API - the user can come from anywhere, provided they give us a token.
         pass
 
     # No authentication needed - pass the github token as TOKEN.
     def post(self, uuid):
-        from tornado.escape import json_encode
-
         self.set_header('Content-Type', 'application/json')
-
-        # We could also look for the secret cookie...
         token = self.get_argument('token', None)
+        response = self.availablitiy(uuid, token)
+        self.set_status(response['status'])
+        self.finish(json_encode(response))
 
-        while token is not None:
+    def availablitiy(self, uuid, token):
+        """
+        Return a status payload to confirm whether or not the data exists ({'status': 200, ...} for yes)
+
+        """
+
+        if False:
+            while token is not None:
+                gh = Github(token)
+
+                # Try to get the user's rate limit. This will fail if we have a bad token.
+                try:
+                    rate_limiting = gh.rate_limiting
+                except github.GithubException as err:
+                    message = str(err)
+                    token = None
+                    break
+
+                if rate_limiting[0] / float(rate_limiting[0]) < 0.1:
+                    message = 'Less than 10% left of your GitHub rate limit ({}/{}).'.format(*gh.rate_limiting)
+                    token = None
+                    break
+
+                if not set(gh.oauth_scopes).issuperset(set(self.settings['github_scope'])):
+                    message = 'Incorrect scopes for the token given token (it has "{}").'.format(', '.join(gh.oauth_scopes))
+                    token = None
+
+                break
+            
+            if token is None:
+                response = {'status': 401, 'message': message}
+                return response
+
             gh = Github(token)
 
-            # Try to get the user's rate limit. This will fail if we have a bad token.
             try:
-                rate_limiting = gh.rate_limiting
-            except github.GithubException as err:
-                message = str(err)
-                token = None
-                break
-
-            if rate_limiting[0] / float(rate_limiting[0]) < 0.1:
-                message = 'Less than 10% left of your GitHub rate limit ({}/{}).'.format(*gh.rate_limiting)
-                token = None
-                break
-
-            if not set(gh.oauth_scopes).issuperset(set(self.settings['github_scope'])):
-                message = 'Incorrect scopes for the token given token (it has "{}").'.format(', '.join(gh.oauth_scopes))
-                token = None
-
-            break
-        
-        if token is None:
-            self.set_status(401)
-            response = {'status': 401, 'message': message}
-            self.finish(json_encode(response))
-            return
-
-        gh = Github(token)
-
-        try:
-            repo = gh.get_repo(uuid)
-            repo.id
-        except github.GithubException:
-            self.set_status(422)
-            response = {'status': 422, 'message': "The repo '{}' could not be found.".format(uuid)}
-            self.finish(json_encode(response))
-            return
+                repo = gh.get_repo(uuid)
+                repo.id
+            except github.GithubException:
+                return {'status': 422, 'message': "The repo '{}' could not be found.".format(uuid)}
 
         datastore = self.settings['datastore']
         executor = self.settings['executor']
@@ -330,7 +361,7 @@ class DataAvailableHandler(BaseHandler):
             # The status code should be set to "Submitted, and processing"
             self.set_status(202)
             response = {'status': 202, 'message': 'Job submitted and is processing.', 'status_info': []}
-            self.finish(json_encode(response))
+            return response
         else:
             future = datastore[uuid]
 
@@ -342,24 +373,43 @@ class DataAvailableHandler(BaseHandler):
                     status = json.load(fh)
 
             if future.done():
-                # TODO: Allow query for "ready".
-                try:
-                    self.finish(json_encode({'status': 200, 'message': "Done!", 'status_info': status}))
-                except Exception as err:
-                    import traceback
-                    self.set_status(500)
-                    self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(),
-                                repo_slug=uuid))
-                    return
-#                self.finish(json_encode(future.result()))
+                return {'status': 200, 'message': "ready", 'status_info': status}
             else:
-                self.set_status(202)
                 response = {'status': 202,
                             'message': ('Job is still running and started {}.'
                                         ''.format(pretty_timedelta(future._start_time, datetime.datetime.utcnow()))),
                             'status_info': status,
                             }
-                self.finish(json_encode(response))
+                return response
+
+
+class APIDataHandler(APIDataAvailableHandler):
+    @tornado.web.authenticated
+    def get(self, uuid):
+        token = self.get_current_user()['access_token']
+        self.resp(uuid, token)
+    
+    def post(self, uuid):
+        token = self.get_argument('token', None)
+        self.resp(uuid, token)
+
+    def resp(self, uuid, token):
+        self.set_header('Content-Type', 'application/json')
+        response = self.availablitiy(uuid, token)
+
+        if response['status'] != 200:
+            self.set_status(response['status'])
+            self.finish(json_encode(response)) 
+        else:
+            future = datastore = self.settings['datastore'][uuid]
+            # Just because we have the result, doesn't mean it wasn't an exception...
+            try:                    
+                self.finish(json_encode({'status': 200,
+                                         'content': future.result()}))
+            except Exception as err:
+                import traceback
+                response = {'status': 500, 'message': str(err), 'traceback': traceback.format_exc()}
+                return response
 
 
 class MainHandler(BaseHandler):
@@ -380,9 +430,11 @@ def make_app(**kwargs):
         tornado.web.URLSpec(r'/oauth', GithubAuthHandler, name='auth_github'),
         tornado.web.URLSpec(r'/', MainHandler, name='main'),
         (r'/static/(.*)', tornado.web.StaticFileHandler),
-        tornado.web.URLSpec(r'/data/(.*)', DataAvailableHandler, name='data'),
+        (r'/api/request/(.*)', APIDataAvailableHandler),
+        (r'/api/data/(.*)', APIDataHandler),
         tornado.web.URLSpec(r'/report/([^/]+)/([^/]+)', RepoReport),
         (r'/logout', GithubAuthLogout),
+        (r'/status', Status),
         ],
         login_url='/oauth', xsrf_cookies=True,
         template_path='templates',
