@@ -11,6 +11,7 @@ import jinja2
 import tornado.autoreload
 import tornado.ioloop
 import tornado.web
+import tornado.httpserver
 from tornado.escape import json_encode
 
 import nbformat
@@ -447,17 +448,31 @@ if __name__ == '__main__':
     # Our datastore is simply a dictionary of {Repo UUID: Future objects}
     datastore = {}
 
+    DEBUG = bool(os.environ.get('DEBUG', False))
+
     app = make_app(github_client_id=os.environ['CLIENT_ID'],
                    github_client_secret=os.environ['CLIENT_SECRET'],
                    cookie_secret=os.environ['COOKIE_SECRET'],
                    github_scope=['repo', 'user:email'],
-                   autoreload=True, debug=True,
+                   autoreload=DEBUG, debug=DEBUG,
                    default_handler_class=Error404,
                    datastore=datastore)
-    app.listen(os.environ.get('PORT', 8888))
+
+    http_server = tornado.httpserver.HTTPServer(app, xheaders=True)
+    port = int(os.environ.get("PORT", 8888))
+
+    # https://devcenter.heroku.com/articles/optimizing-dyno-usage#python
+    n_processes = int(os.environ.get("WEB_CONCURRENCY", 1))
+
+    if n_processes == 1 or DEBUG:
+        http_server.listen(port)
+    else:
+        # http://www.tornadoweb.org/en/stable/guide/running.html#processes-and-ports
+        http_server.bind(port)
+        http_server.start(n_processes)
 
     executor = ProcessPoolExecutor()
     app.settings['executor'] = executor
 
     tornado.autoreload.add_reload_hook(executor.shutdown)
-    tornado.ioloop.IOLoop.current().start()
+    tornado.ioloop.IOLoop.instance().start()

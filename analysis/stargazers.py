@@ -4,7 +4,7 @@ import plotly.graph_objs as go
 
 def stargazers_prep(payload):
     stargazers = pd.DataFrame.from_dict(payload['github']['stargazers'])
-     if len(stargazers) == 0:
+    if len(stargazers) == 0:
         stargazers = {'starred_at': [], 'login': []}
     else:
         stargazers['starred_at'] = pd.to_datetime(stargazers['starred_at'])
