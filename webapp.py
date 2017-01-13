@@ -3,6 +3,7 @@ from collections import OrderedDict
 import datetime
 import os
 import json
+import shutil
 import textwrap
 import time
 
@@ -62,8 +63,12 @@ class Error404(BaseHandler):
         self.finish(self.render('404.html'))
 
 
-def fetch_repo_data(uuid, token):
+CACHE_GH =  os.path.join('ephemeral_storage', '{}.github.json')
+CACHE_COMMITS = os.path.join('ephemeral_storage', '{}.commits.json')
+CACHE_CLONE = os.path.join('ephemeral_storage', '{}')
 
+
+def fetch_repo_data(uuid, token):
     def update_status(message=None, clear=False):
         status_file = os.path.join('ephemeral_storage', uuid + '.status.json')
         if not os.path.exists(status_file) or clear:
@@ -84,7 +89,7 @@ def fetch_repo_data(uuid, token):
         with open(status_file, 'w') as fh:
             json.dump(existing_status, fh)
 
-    cache = os.path.join('ephemeral_storage', uuid + '.github.json')
+    cache = CACHE_GH.format(uuid)
     dirname = os.path.dirname(cache)
     # Ensure the storage location exists.
     if not os.path.exists(dirname):
@@ -128,17 +133,17 @@ def fetch_repo_data(uuid, token):
         with open(cache, 'w') as fh:
             json.dump(report, fh)
 
-    cache = os.path.join('ephemeral_storage', uuid + '_computed.json')
+    cache = CACHE_COMMITS.format(uuid)
     if not os.path.exists(cache):
-        target = os.path.join('ephemeral_storage', uuid)
-        if os.path.exists(target):
+        clone_target = CACHE_CLONE.format(uuid)
+        if os.path.exists(clone_target):
             update_status('Fetching remotes from cached clone')
-            repo = git.Repo(target)
+            repo = git.Repo(clone_target)
             for remote in repo.remotes:
                 remote.fetch()
         else:
             update_status('Cloning repo')
-            repo = git.Repo.clone_from(repo.clone_url, target)     
+            repo = git.Repo.clone_from(repo.clone_url, clone_target)     
 
         update_status('Analysing commits')
         repo_data = git_analysis.commits(repo)
@@ -200,6 +205,18 @@ class RepoReport(BaseHandler):
                 # Do what we do with the data handler (return 202 until we are ready)
                 return self.report_not_ready(uuid)
             else:
+                # Secret-sauce to spoil the cache.
+                if self.get_argument('cache', '') == 'spoil':
+                    print("Spoiling the cache for {}".format(uuid))
+                    if os.path.exists(CACHE_GH.format(uuid)):
+                        os.remove(CACHE_GH.format(uuid))
+                    if os.path.exists(CACHE_COMMITS.format(uuid)):
+                        os.remove(CACHE_COMMITS.format(uuid))
+                    if os.path.exists(CACHE_CLONE.format(uuid)):
+                        shutil.rmtree(CACHE_CLONE.format(uuid))
+                    datastore.pop(uuid)
+                    return self.redirect(self.request.uri.split('?')[0])
+
                 try:
                     payload = datastore[uuid].result()
                 except (KeyboardInterrupt, SystemExit):
@@ -429,7 +446,7 @@ if __name__ == '__main__':
     app = make_app(github_client_id=os.environ['CLIENT_ID'],
                    github_client_secret=os.environ['CLIENT_SECRET'],
                    cookie_secret=os.environ['COOKIE_SECRET'],
-                   github_scope=['repo', 'user:email'],
+                   github_scope=['user:email'],
                    autoreload=DEBUG, debug=DEBUG,
                    default_handler_class=Error404,
                    datastore=datastore)
