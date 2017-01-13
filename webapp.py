@@ -24,6 +24,8 @@ from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuth
 
 import git_analysis
 
+import plotly.offline.offline as pl_offline
+
 
 class BaseHandler(OAuthBase):
     def render_template(self, template_name, **kwargs):
@@ -92,12 +94,19 @@ def fetch_repo_data(uuid, token):
     g = Github(token)
     repo = g.get_repo(uuid)
 
+    # Check that this is actually a valid repository. If not, return a known status so that our report can deal with it
+    # with more grace than simply catching the exception.
+    try:
+        repo.url
+    except Exception:
+        report = {'status': 404, 'reason':'Repository not found'}
+        return report
+
     if os.path.exists(cache):
         update_status('Load GitHub API data from ephemeral cache')
         with open(cache, 'r') as fh:
             report = json.load(fh)
     else:
-
         report = {}
 
         update_status('Fetching GitHub API data')
@@ -106,7 +115,7 @@ def fetch_repo_data(uuid, token):
         update_status('Fetching GitHub issues data')
         issues = repo.get_issues(state='all', since=datetime.datetime.utcnow() - datetime.timedelta(days=30))
         
-        limit = 5
+        limit = 500
         issues_raw = [issue.raw_data for issue, _ in zip(issues, range(limit))]
         report['issues'] = issues_raw
 
@@ -201,10 +210,9 @@ class RepoReport(BaseHandler):
                     self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(), repo_slug=uuid))
                     return
 
-                import plotly
-                import plotly.plotly as py
-                import plotly.graph_objs as go
-                import plotly.offline.offline as pl_offline
+                if payload.get('status', 200) != 200:
+                    self.set_status(400)
+                    return self.finish(self.render('error.html', error="The repo doesn't exist"))
                 
                 def html(fig):
                     config = dict(showLink=False, displaylogo=False)
@@ -315,41 +323,9 @@ class APIDataAvailableHandler(BaseHandler):
         Return a status payload to confirm whether or not the data exists ({'status': 200, ...} for yes)
 
         """
-
-        if False:
-            while token is not None:
-                gh = Github(token)
-
-                # Try to get the user's rate limit. This will fail if we have a bad token.
-                try:
-                    rate_limiting = gh.rate_limiting
-                except github.GithubException as err:
-                    message = str(err)
-                    token = None
-                    break
-
-                if rate_limiting[0] / float(rate_limiting[0]) < 0.1:
-                    message = 'Less than 10% left of your GitHub rate limit ({}/{}).'.format(*gh.rate_limiting)
-                    token = None
-                    break
-
-                if not set(gh.oauth_scopes).issuperset(set(self.settings['github_scope'])):
-                    message = 'Incorrect scopes for the token given token (it has "{}").'.format(', '.join(gh.oauth_scopes))
-                    token = None
-
-                break
-            
-            if token is None:
-                response = {'status': 401, 'message': message}
-                return response
-
-            gh = Github(token)
-
-            try:
-                repo = gh.get_repo(uuid)
-                repo.id
-            except github.GithubException:
-                return {'status': 422, 'message': "The repo '{}' could not be found.".format(uuid)}
+        if token is None:
+            response = {'status': 401, 'message': 'Token is not defined'}
+            return response
 
         datastore = self.settings['datastore']
         executor = self.settings['executor']
