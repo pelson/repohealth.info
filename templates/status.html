@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
+
+<div class="row-centered">
+  <div class="col-sm-7 col-centered">
+    <div class="alert alert-info centered" role="alert">
+      <a href="#" class="alert-link">
+        GitHub API limit is {{ gh.rate_limiting[0] }} of {{ gh.rate_limiting[1] }}
+      </a>
+    </div>
+  </div>
+
+  <div class="clearfix"></div>
+
+  <div class="col-sm-7 col-centered">
+    <div class="alert alert-info centered" role="alert">
+      <a href="#" class="alert-link">
+        Future cache has {{ futures|length }} items:
+      </a>
 {% for uuid, future in futures.items() %}
-<li>{{ uuid }}, {{future }}, {{ future.running() }}</li>
+<li><a href="/report/{{ uuid }}">{{ uuid }}</a> <i class="fa fa-fw fa-lg {{ 'fa-check' if future.done() else 'fa-gears' }}"></i></li>
 {% endfor %}
+
+    </div>
+  </div>
+
+  </div>
+</div>
+
+
 {% endblock %}

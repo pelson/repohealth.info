@@ -104,7 +104,7 @@ def fetch_repo_data(uuid, token):
     try:
         repo.url
     except Exception:
-        report = {'status': 404, 'reason':'Repository not found'}
+        report = {'status': 404, 'message': 'Repository "{}" not found.'.format(uuid)}
         return report
 
     if os.path.exists(cache):
@@ -228,8 +228,9 @@ class RepoReport(BaseHandler):
                     return
 
                 if payload.get('status', 200) != 200:
-                    self.set_status(400)
-                    return self.finish(self.render('error.html', error="The repo doesn't exist"))
+                    self.set_status(payload['status'])
+                    # A more refined message, rather than the full traceback form.
+                    return self.finish(self.render('error.html', error=payload["message"]))
                 
                 def html(fig):
                     config = dict(showLink=False, displaylogo=False)
@@ -314,9 +315,8 @@ class Status(BaseHandler):
     @tornado.web.authenticated
     def get(self):
         user = self.get_current_user()
-        # TODO: We should define an admin group...
-        if user['login'] == 'pelson':
-            self.finish(self.render('status.html', futures=self.settings['datastore']))
+        gh = Github(user['access_token'])
+        self.finish(self.render('status.html', futures=self.settings['datastore'], user=user, gh=gh))
 
 
 class APIDataAvailableHandler(BaseHandler):
@@ -379,11 +379,13 @@ class APIDataAvailableHandler(BaseHandler):
 
 class APIDataHandler(APIDataAvailableHandler):
     @tornado.web.authenticated
-    def get(self, uuid):
+    def get(self, org_user, repo_name):
+        uuid = '{}/{}'.format(org_user, repo_name)
         token = self.get_current_user()['access_token']
         self.resp(uuid, token)
     
-    def post(self, uuid):
+    def post(self, org_user, repo_name):
+        uuid = '{}/{}'.format(org_user, repo_name)
         token = self.get_argument('token', None)
         self.resp(uuid, token)
 
@@ -425,8 +427,8 @@ def make_app(**kwargs):
         tornado.web.URLSpec(r'/', MainHandler, name='main'),
         (r'/static/(.*)', tornado.web.StaticFileHandler),
         (r'/api/request/(.*)', APIDataAvailableHandler),
-        (r'/api/data/(.*)', APIDataHandler),
-        tornado.web.URLSpec(r'/report/([^/]+)/([^/]+)', RepoReport),
+        (r'/api/data/([\w]+)/([\w]+)', APIDataHandler),
+        tornado.web.URLSpec(r'/report/([\w]+)/([\w]+)', RepoReport),
         (r'/logout', GithubAuthLogout),
         (r'/status', Status),
         ],
