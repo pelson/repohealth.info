@@ -177,9 +177,9 @@ def make_app(**kwargs):
 
 
 if __name__ == '__main__':
-    app = make_app(github_client_id='2f43c89156cbcf321139',
-                   github_client_secret='36782ebeac39bb66c1548969938933884d63152f',
-                   cookie_secret='a_secret_cookie_salt',
+    app = make_app(cookie_secret=os.environ('COOKIE_SECRET'),
+                   github_client_id=os.environ['CLIENT_ID'],
+                   github_client_secret=os.environ['CLIENT_SECRET'],
                    debug=True,
                    github_scope=['repo'],
                    autoreload=True)
