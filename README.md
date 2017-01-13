@@ -20,11 +20,14 @@ The source of this repository is licensed under a BSD 3-clause license.
 
 We have intentionally kept the development setup of this repository very simple.
 The service is a single tornado web-app that can be deployed to any machine with the pre-requisite dependencies.
-The code to build the deployment image can be found in 
+The code to build the deployment image can be found in [buildpack-run.sh](https://github.com/pelson/repo-health-report/blob/master/buildpack-run.sh).
+When developing locally, I have a personal GitHub application token that points back to ```localhost:8888``` and I define the CLIENT_ID, CLIENT_SECRET and COOKIE_SECRET environment
+variables (the latter can be set to any value) - finally, I simply run ``python webapp.py`` and am able to authenticate through github to view reports locally.
 
-Whilst we could be making use of more advanced
-caching technologies (like a database!) we simply rely on our deployment target's ephemeral storage. 
+The service itself is running on Heroku, and whilst we could be making use of more advanced caching technologies (like a database!) we
+simply rely on our deployment target's ephemeral storage to act as a data cache.
 
+Google analytics is enabled on the service - please let @pelson know if you are a developer of repo-health-report and want access.
 
 ## Other work
 
