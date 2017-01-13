@@ -11,6 +11,13 @@ We study a repository's commits and combine this with data available through the
 No single metric is a good indicator of a repository's health, and we don't try to combine the information in any way to come up with a single health "score" -
 instead, we present the data in a way that will allow you to draw your own conclusions.
 
+## Scope
+
+This service is intended to remain simple and accessible.
+Whilst it would be interesting to add more layers of sophistication (e.g. predictive metrics), the diminishing returns will quickly outweigh the cognitive
+burden on maintainers of this repository - for this reason, we encourage collaboration that *simplifies* 3rd party data analysis using the APIs
+that are provided by this service.
+
 ## License
 
 This work has been funded by the [Met Office](https://www.metoffice.gov.uk/), the UK's national weather service.
