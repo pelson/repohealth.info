@@ -3,6 +3,7 @@ import analysis.all_commits as all_commits
 import analysis.last_commits as last_commits
 import analysis.commit_LOC_delta as commit_LOC_delta
 import analysis.stargazers as stargazers
+import analysis.issues_opened_closed as issues_open_closed
 
 
 # Format: "key", "Title", plot_module.
@@ -13,4 +14,5 @@ PLOTLY_PLOTS = (
     ['last_commits', 'Developer drop-off: days since last commit', last_commits],
     ['commit_LOC_delta', 'Lines of change per commit', commit_LOC_delta],
     ['stargazers', 'Repository stargazers', stargazers],
+    ['issues', 'All time issues opened & closed', issues_open_closed],
 )
