@@ -5,9 +5,10 @@ import os
 import json
 import shutil
 import textwrap
+import threading
 import time
 
-
+from dask.distributed import Client, LocalCluster
 import jinja2
 import tornado.autoreload
 import tornado.ioloop
@@ -26,6 +27,7 @@ from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuth
 import git_analysis
 
 import plotly.offline.offline as pl_offline
+
 
 
 class BaseHandler(OAuthBase):
@@ -217,6 +219,7 @@ class RepoReport(BaseHandler):
                     datastore.pop(uuid)
                     return self.redirect(self.request.uri.split('?')[0])
 
+                print('FETCH RESULT')
                 try:
                     payload = datastore[uuid].result()
                 except (KeyboardInterrupt, SystemExit):
@@ -227,6 +230,7 @@ class RepoReport(BaseHandler):
                     self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(), repo_slug=uuid))
                     return
 
+                print('Result fetched')
                 if payload.get('status', 200) != 200:
                     self.set_status(payload['status'])
                     # A more refined message, rather than the full traceback form.
@@ -243,12 +247,13 @@ class RepoReport(BaseHandler):
                                     'script': plot_html[script_split:],
                                     'id': plotdivid}
                     return plot_content
-
+                print('hello before plotly')
                 from analysis import PLOTLY_PLOTS
 
                 visualisations = OrderedDict()
 
                 for key, title, mod in PLOTLY_PLOTS:
+                    print('preparing {}'.format(key))
                     prep_fn_name = '{}_prep'.format(key)
                     viz_fn_name = '{}_viz'.format(key)
                     prepare = getattr(mod, prep_fn_name)
@@ -272,7 +277,6 @@ class RepoReport(BaseHandler):
                     visualisation['title'] = title
 
                     visualisations[key] = visualisation
-
 
                 if format == 'notebook':
                     nb = nbf.new_notebook()
@@ -327,8 +331,17 @@ class APIDataAvailableHandler(BaseHandler):
         # We don't want xsrf checking for this API - the user can come from anywhere, provided they give us a token.
         pass
 
+    @tornado.web.authenticated
+    def get(self, org_user, repo_name):
+        uuid = '{}/{}'.format(org_user, repo_name)
+        token = self.get_current_user()['access_token']
+        response = self.availablitiy(uuid, token)
+        self.set_status(response['status'])
+        self.finish(json_encode(response))
+
     # No authentication needed - pass the github token as TOKEN.
-    def post(self, uuid):
+    def post(self, org_user, repo_name):
+        uuid = '{}/{}'.format(org_user, repo_name)
         self.set_header('Content-Type', 'application/json')
         token = self.get_argument('token', None)
         response = self.availablitiy(uuid, token)
@@ -365,7 +378,8 @@ class APIDataAvailableHandler(BaseHandler):
             else:
                 with open(status_file, 'r') as fh:
                     status = json.load(fh)
-
+            print('Are you done?', future.done())
+            print(future.result(0.1))
             if future.done():
                 return {'status': 200, 'message': "ready", 'status_info': status}
             else:
@@ -426,7 +440,7 @@ def make_app(**kwargs):
         tornado.web.URLSpec(r'/oauth', GithubAuthHandler, name='auth_github'),
         tornado.web.URLSpec(r'/', MainHandler, name='main'),
         (r'/static/(.*)', tornado.web.StaticFileHandler),
-        (r'/api/request/(.*)', APIDataAvailableHandler),
+        (r'/api/request/([\w\-]+)/([\w\-]+)', APIDataAvailableHandler),
         (r'/api/data/([\w\-]+)/([\w\-]+)', APIDataHandler),
         tornado.web.URLSpec(r'/report/([\w\-]+)/([\w\-]+)', RepoReport),
         (r'/logout', GithubAuthLogout),
@@ -439,11 +453,67 @@ def make_app(**kwargs):
     return app
 
 
+class ThreadedLocalCluster(threading.Thread):
+    daemon = True
+    def __init__(self, address=None, **kwargs):
+        self.kwargs = kwargs
+        super(ThreadedLocalCluster, self).__init__()
+
+    def run(self):
+        # Create a loop for this thread.
+        self.loop = tornado.ioloop.IOLoop()
+        self.loop.make_current()
+
+        # Update the kwargs with appropriate entries for starting in a background thread.
+        kwargs = self.kwargs.copy()
+        kwargs.update(dict(loop=self.loop))
+        self.cluster = LocalCluster(**kwargs)
+
+
+class ThreadedClient(threading.Thread):
+    daemon = True
+    def __init__(self, address=None, **kwargs):
+        if address is not None:
+            assert 'address' not in kwargs
+        kwargs['address'] = address
+        self.kwargs = kwargs
+        super(ThreadedClient, self).__init__()
+
+    def run(self):
+        # Create a loop for this thread.
+        self.loop = tornado.ioloop.IOLoop()
+        self.loop.make_current()
+
+        # Update the kwargs with appropriate entries for starting in a background thread.
+        kwargs = self.kwargs.copy()
+        kwargs.update(dict(start=False, loop=self.loop))
+
+        # Define the client (without starting it), so that we can access it from other threads.
+        self.cli = Client(**kwargs)
+
+        # Run the blocking client in this thread.
+        self.cli.start()
+
+
 if __name__ == '__main__':
     # Our datastore is simply a dictionary of {Repo UUID: Future objects}
+    # TODO: Use dask's publish & persist model instead of a process level cache like this.
     datastore = {}
 
     DEBUG = bool(os.environ.get('DEBUG', False))
+    if DEBUG:
+        print('Starting in debug')
+    DASK_CLUSTER = os.environ.get('DASK_CLUSTER', None)
+    if DASK_CLUSTER is None:
+        cluster_thread = ThreadedLocalCluster(diagnostics_port=None, scheduler_port=0, n_workers=2,
+                                              threads_per_worker=1)
+        cluster_thread.run()
+        DASK_CLUSTER = cluster_thread.cluster
+
+    cli_thread = ThreadedClient(DASK_CLUSTER)
+    cli_thread.run()
+    client = cli_thread.cli
+
 
     app = make_app(github_client_id=os.environ['CLIENT_ID'],
                    github_client_secret=os.environ['CLIENT_SECRET'],
@@ -458,7 +528,6 @@ if __name__ == '__main__':
 
     # https://devcenter.heroku.com/articles/optimizing-dyno-usage#python
     n_processes = int(os.environ.get("WEB_CONCURRENCY", 1))
-
     if n_processes == 1 or DEBUG:
         http_server.listen(port)
     else:
@@ -466,11 +535,7 @@ if __name__ == '__main__':
         http_server.bind(port)
         http_server.start(n_processes)
 
-    executor = ProcessPoolExecutor()
-    app.settings['executor'] = executor
-
-    if DEBUG:
-        tornado.autoreload.add_reload_hook(executor.shutdown)
+    app.settings['executor'] = client
 
     def keep_alive(*args):
         # Keeps the heroku process from idling by fetching the logo every 4 minutes.
