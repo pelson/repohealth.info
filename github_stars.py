@@ -44,6 +44,9 @@ def repo_stargazers(repo, token):
     stargazers = []
     handle_response(stargazers, response)
 
+    if 'Link' not in response.headers:
+        return stargazers
+
     next_url, last_url = parse_link(response.headers['Link'])
     qs = parse_qs(urlparse(last_url).query)
     last_page = int(qs['page'][0])
@@ -76,7 +79,8 @@ def repo_stargazers(repo, token):
                     logging.exception('Problem with {} occured. Skipping'.format(url))
                     logging.exception(traceback.format_exc())
         if futures:
-            yield tornado.gen.sleep(5)
+            # Give Github some time to get over our request before we ask again.
+            yield tornado.gen.sleep(10)
 
     if len(stargazers) != count:
         logging.warning('The number of expected stargazers ({}) did not match the number we got ({}).'

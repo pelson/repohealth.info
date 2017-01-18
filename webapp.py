@@ -247,6 +247,7 @@ class RepoReport(BaseHandler):
                     raise
                 except Exception as err:
                     import traceback
+                    print(traceback.format_exc())
                     self.set_status(500)
                     self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(), repo_slug=uuid))
                     return
@@ -428,6 +429,7 @@ class APIDataHandler(APIDataAvailableHandler):
                                          'content': future.result()}))
             except Exception as err:
                 import traceback
+                print(traceback.format_exc())
                 response = {'status': 500, 'message': str(err), 'traceback': traceback.format_exc()}
                 return response
 

@@ -37,6 +37,9 @@ def repo_issues(repo, token):
     issues = []
     handle_response(issues, response)
     
+    if 'Link' not in response.headers:
+        return issues
+
     next_url, last_url = parse_link(response.headers['Link'])
     qs = parse_qs(urlparse(last_url).query)
     last_page = int(qs['page'][0])
