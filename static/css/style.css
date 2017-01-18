@@ -78,3 +78,8 @@ body {
     min-height: 3.5em;
     padding-top: 1em;
 }
+
+.status_message_container {
+    clear: both;
+    padding-top: 2em;
+}

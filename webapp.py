@@ -395,7 +395,7 @@ class APIDataAvailableHandler(BaseHandler):
                 return {'status': 200, 'message': "ready", 'status_info': status}
             else:
                 response = {'status': 202,
-                            'message': ('Job is still running and started {}.'
+                            'message': ('Job started {} and is still running.'
                                         ''.format(pretty_timedelta(future._start_time, datetime.datetime.utcnow()))),
                             'status_info': status,
                             }

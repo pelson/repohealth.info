@@ -8,12 +8,16 @@
         <div style="text-align: center">
             <i id="status_icon" class="notification-icon fa fa-spinner fa-pulse fa-fw" style="font-size: 9em;"></i>
             <h3 class="h3">Fetching report data for "{{ repo_slug }}"</h3>
-            <span class="h4" style="padding-right: 1em;">Response:</span>
-            <span id="status_message">{% if devel %}Server response{% endif %}</span>
         </div>
-        <div>
-            <ul id="status_log" class="fa-ul" style="">
-            </ul>
+        <div class="col-centered">
+            <p>
+                <ul id="status_log" class="fa-ul">
+                </ul>
+            </p>
+            <div class="status_message_container">
+                <span class="h4" style="padding-right: 1em;">Response:</span>
+                <span id="status_message">{% if devel %}Server response{% endif %}</span>
+            </div>
         </div>
     </div>
 </div>
