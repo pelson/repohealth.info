@@ -114,21 +114,45 @@ def fetch_repo_data(uuid, token):
     else:
         report = {}
 
+        loop = tornado.ioloop.IOLoop()
+
         update_status('Fetching GitHub API data')
         report['repo'] = repo.raw_data
 
         update_status('Fetching GitHub issues data')
-        issues = repo.get_issues(state='all', since=datetime.datetime.utcnow() - datetime.timedelta(days=30))
+        import fetch_issues
         
-        limit = 500
-        issues_raw = [issue.raw_data for issue, _ in zip(issues, range(limit))]
-        report['issues'] = issues_raw
+        from tornado.ioloop import IOLoop
+        from functools import partial
 
+        issues_fn = partial(fetch_issues.repo_issues, repo, token)
+        issues = loop.run_sync(issues_fn)
+
+        #issues = repo.get_issues(state='all', since=datetime.datetime.utcnow() - datetime.timedelta(days=30))
+        
+        user_keys = ['login', 'id']
+        issue_keys = ['number', 'comments', 'created_at', 'state', 'closed_at']
+
+        issue_handler = lambda issue: dict(**{'user/{}'.format(key): issue['user'][key] for key in user_keys},
+                                           **{key: issue[key] for key in issue_keys})
+        report['issues'] = [issue_handler(issue) for issue in issues]
+        
         update_status('Fetching GitHub stargazer data')
-        stargazers = repo.get_stargazers_with_dates()
-        stargazer_data = [{'starred_at': stargazer.raw_data['starred_at'], 'login': stargazer.raw_data['user']['login']}
-                          for stargazer in stargazers]
-        report['stargazers'] = stargazer_data
+#        stargazers = repo.get_stargazers_with_dates()
+
+        import github_stars
+        stargazers_fn = partial(github_stars.repo_stargazers, repo, token)
+        stargazers = loop.run_sync(stargazers_fn)
+
+        star_keys = ['starred_at']
+        star_handler = lambda star: dict(**{'user/{}'.format(key): star['user'][key] for key in user_keys},
+                                         **{key: star[key] for key in star_keys})
+#        stargazer_data = [{'starred_at': stargazer.raw_data['starred_at'], 'login': stargazer.raw_data['user']['login']}
+#                          for stargazer in stargazers]
+        for star in stargazers:
+            print(star)
+    
+        report['stargazers'] = [star_handler(stargazer) for stargazer in stargazers]
 
         with open(cache, 'w') as fh:
             json.dump(report, fh)
