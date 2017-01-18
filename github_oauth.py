@@ -69,9 +69,10 @@ class BaseHandler(tornado.web.RequestHandler, GitHubMixin):
         return user
 
     def fq_reverse_url(self, name, *args):
-        return "{0}://{1}{2}".format(self.request.protocol,
-                                     self.request.host,
-                                     self.reverse_url(name, *args))
+        base_uri = self.settings.get('fq_base_uri')
+        if base_uri is None:
+            base_uri = '{}://{}'.format(self.request.protocol, self.request.host)
+        return "{0}{1}".format(base_uri, self.reverse_url(name, *args))
 
 
 class GithubAuthLogout(BaseHandler):
