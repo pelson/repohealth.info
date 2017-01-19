@@ -76,7 +76,7 @@ def main():
     def keep_alive(*args):
         # Keeps the heroku process from idling by fetching the logo
         # every 4 minutes.
-        requests.get('https://repohealth.info/static/img/heart.png')
+        requests.get('http://repohealth.info/static/img/heart.png')
 
     tornado.ioloop.PeriodicCallback(keep_alive, 4 * 60 * 1000).start()
 
