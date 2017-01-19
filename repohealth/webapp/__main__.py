@@ -6,6 +6,7 @@ import tornado.autoreload
 import tornado.ioloop
 import tornado.web
 import tornado.httpserver
+from tornado.log import enable_pretty_logging
 
 from repohealth.webapp.handlers import (
     MainHandler, APIDataAvailableHandler,
@@ -17,7 +18,7 @@ from repohealth.auth.github import (
 def routes():
     return [
         tornado.web.URLSpec(r'/oauth', GithubAuthHandler, name='auth_github'),
-        tornado.web.URLSpec(r'/', MainHandler, name='main'),
+        tornado.web.URLSpec(r'/?', MainHandler, name='main'),
         (r'/static/(.*)', tornado.web.StaticFileHandler),
         (r'/api/request/(.*)', APIDataAvailableHandler),
         (r'/api/data/([\w\-]+)/([\w\-]+)', APIDataHandler),
@@ -79,6 +80,7 @@ def main():
 
     tornado.ioloop.PeriodicCallback(keep_alive, 4 * 60 * 1000).start()
 
+    enable_pretty_logging()
     tornado.ioloop.IOLoop.instance().start()
 
 
