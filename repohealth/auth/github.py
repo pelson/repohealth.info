@@ -21,8 +21,6 @@ class GitHubMixin(tornado.auth.OAuth2Mixin):
     @tornado.auth._auth_return_future
     def get_authenticated_user(self, redirect_uri, client_id, client_secret,
                                code, callback, extra_fields=None):
-   
-
         http = self.get_auth_http_client()
         args = {
             "redirect_uri": redirect_uri,

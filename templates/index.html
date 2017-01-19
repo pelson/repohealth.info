@@ -2,9 +2,14 @@
 
 {% set title='GitHub repository health report' %}
 
+{% block head %}
+{{ super() }}
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+{% endblock %}
+
 {% block content %}
-
-
 <div class="row">
   <div class="col-sm-12 centered">
     <div class="thumbnail centered" style="background-color: #ffff80; padding: 1em;">
