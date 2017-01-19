@@ -83,3 +83,7 @@ body {
     clear: both;
     padding-top: 2em;
 }
+
+.gh-emoji {
+    height: 1.5em;
+}

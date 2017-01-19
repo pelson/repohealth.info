@@ -2,7 +2,7 @@
 
 # Github repository health report
 
-This is the source for the [Github repository health report service](https://repo-health-report.herokuapp.com/) found at https://repo-health-report.herokuapp.com/.
+This is the source for the [Github repository health report service](https://repohealth.info/) found at https://repohealth.info/.
 
 ## About
 

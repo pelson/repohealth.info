@@ -26,12 +26,20 @@ from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuth
 import git_analysis
 
 import plotly.offline.offline as pl_offline
+import github_emojis
 
 
 class BaseHandler(OAuthBase):
+    def prepare(self):
+        url = self.request.full_url()
+        if self.request.protocol == "http" and 'localhost' not in url:
+            self.redirect("https://%s".format(url[len("http://"):]), permanent=True)
+        super(OAuthBase, self).prepare()
+
     def render_template(self, template_name, **kwargs):
         template_dirs = self.settings["template_path"]
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_dirs))
+        env.filters['gh_emoji'] = github_emojis.to_html
         template = env.get_template(template_name)
         content = template.render(kwargs)
         return content
@@ -139,20 +147,20 @@ def fetch_repo_data(uuid, token):
         
         update_status('Fetching GitHub stargazer data')
 #        stargazers = repo.get_stargazers_with_dates()
-
         import github_stars
         stargazers_fn = partial(github_stars.repo_stargazers, repo, token)
         stargazers = loop.run_sync(stargazers_fn)
 
+        import pickle
+        with open('stargazers.pkl', 'wb') as fh:
+            pickle.dump(stargazers, fh)
+
         star_keys = ['starred_at']
-        star_handler = lambda star: dict(**{'user/{}'.format(key): star['user'][key] for key in user_keys},
-                                         **{key: star[key] for key in star_keys})
-#        stargazer_data = [{'starred_at': stargazer.raw_data['starred_at'], 'login': stargazer.raw_data['user']['login']}
-#                          for stargazer in stargazers]
-        for star in stargazers:
-            print(star)
-    
-        report['stargazers'] = [star_handler(stargazer) for stargazer in stargazers]
+        def star_handler(star):
+            return dict(**{'user/{}'.format(key): star['user'][key] for key in user_keys},
+                        **{key: star[key] for key in star_keys})
+        report['stargazers'] = [star_handler(stargazer) for stargazer in stargazers
+                                if isinstance(stargazer, dict)]
 
         with open(cache, 'w') as fh:
             json.dump(report, fh)
