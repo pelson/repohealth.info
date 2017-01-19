@@ -31,7 +31,6 @@ import plotly.offline.offline as pl_offline
 import plotly.graph_objs as go
 import requests
 
-
 from repohealth.auth.github import (
         BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout)
 
@@ -40,6 +39,9 @@ import repohealth.github.stargazers
 import repohealth.github.issues
 import repohealth.github.emojis
 from repohealth.analysis import PLOTLY_PLOTS
+
+import repohealth.notebook
+import repohealth.generate
 
 
 class BaseHandler(OAuthBase):
@@ -82,116 +84,6 @@ class Error404(BaseHandler):
     def prepare(self):
         self.set_status(404)
         self.finish(self.render('404.html'))
-
-
-CACHE_GH =  os.path.join('ephemeral_storage', '{}.github.json')
-CACHE_COMMITS = os.path.join('ephemeral_storage', '{}.commits.json')
-CACHE_CLONE = os.path.join('ephemeral_storage', '{}')
-
-
-def fetch_repo_data(uuid, token):
-    def update_status(message=None, clear=False):
-        status_file = os.path.join('ephemeral_storage', uuid + '.status.json')
-        if not os.path.exists(status_file) or clear:
-            existing_status = []
-        else:
-            with open(status_file, 'r') as fh:
-                existing_status = json.load(fh)
-
-            # Log the last status item as complete.
-            existing_status[-1]['end'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-
-        # Allow for the option of not adding a status message so that we can call this
-        # function close off the previous message once it is complete.
-        if message is not None:
-            existing_status.append(dict(start=datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-                                        status=message))
-
-        with open(status_file, 'w') as fh:
-            json.dump(existing_status, fh)
-
-    cache = CACHE_GH.format(uuid)
-    dirname = os.path.dirname(cache)
-    # Ensure the storage location exists.
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
-
-    update_status('Initial validation of repo', clear=True)
-    g = Github(token)
-    repo = g.get_repo(uuid)
-
-    # Check that this is actually a valid repository. If not, return a known status so that our report can deal with it
-    # with more grace than simply catching the exception.
-    try:
-        repo.url
-    except Exception:
-        report = {'status': 404, 'message': 'Repository "{}" not found.'.format(uuid)}
-        return report
-
-    if os.path.exists(cache):
-        update_status('Load GitHub API data from ephemeral cache')
-        with open(cache, 'r') as fh:
-            report = json.load(fh)
-    else:
-        report = {}
-
-        loop = tornado.ioloop.IOLoop()
-
-        update_status('Fetching GitHub API data')
-        report['repo'] = repo.raw_data
-
-        update_status('Fetching GitHub issues data')
-        
-        
-        issues_fn = partial(repohealth.github.issues.repo_issues, repo, token)
-        issues = loop.run_sync(issues_fn)
-        user_keys = ['login', 'id']
-        issue_keys = ['number', 'comments', 'created_at', 'state', 'closed_at']
-
-        issue_handler = lambda issue: dict(**{'user/{}'.format(key): issue['user'][key] for key in user_keys},
-                                           **{key: issue[key] for key in issue_keys})
-        report['issues'] = [issue_handler(issue) for issue in issues]
-        
-        update_status('Fetching GitHub stargazer data')
-        stargazers_fn = partial(repohealth.github.stargazers.repo_stargazers, repo, token)
-        stargazers = loop.run_sync(stargazers_fn)
-
-        star_keys = ['starred_at']
-        def star_handler(star):
-            return dict(**{'user/{}'.format(key): star['user'][key] for key in user_keys},
-                        **{key: star[key] for key in star_keys})
-        report['stargazers'] = [star_handler(stargazer) for stargazer in stargazers
-                                if isinstance(stargazer, dict)]
-
-        with open(cache, 'w') as fh:
-            json.dump(report, fh)
-
-    cache = CACHE_COMMITS.format(uuid)
-    if not os.path.exists(cache):
-        clone_target = CACHE_CLONE.format(uuid)
-        if os.path.exists(clone_target):
-            update_status('Fetching remotes from cached clone')
-            repo = git.Repo(clone_target)
-            for remote in repo.remotes:
-                remote.fetch()
-        else:
-            update_status('Cloning repo')
-            repo = git.Repo.clone_from(repo.clone_url, clone_target)     
-
-        update_status('Analysing commits')
-        repo_data = repohealth.git.commits(repo)
-        with open(cache, 'w') as fh:
-            json.dump(repo_data, fh)
-    else:
-        update_status('Load commit from ephemeral cache')
-        with open(cache, 'r') as fh:
-            repo_data = json.load(fh)
-
-    # Round off the status so that the last task has an end time.
-    update_status()
-
-    repo_data['github'] = report
-    return repo_data
 
 
 def pretty_timedelta(datetime, from_date):
@@ -240,16 +132,9 @@ class RepoReport(BaseHandler):
             else:
                 # Secret-sauce to spoil the cache.
                 if self.get_argument('cache', '') == 'spoil':
-                    print("Spoiling the cache for {}".format(uuid))
-                    if os.path.exists(CACHE_GH.format(uuid)):
-                        os.remove(CACHE_GH.format(uuid))
-                    if os.path.exists(CACHE_COMMITS.format(uuid)):
-                        os.remove(CACHE_COMMITS.format(uuid))
-                    if os.path.exists(CACHE_CLONE.format(uuid)):
-                        shutil.rmtree(CACHE_CLONE.format(uuid))
+                    repohealth.generate.clear_cache(uuid)
                     datastore.pop(uuid)
                     return self.redirect(self.request.uri.split('?')[0])
-
                 try:
                     payload = datastore[uuid].result()
                 except (KeyboardInterrupt, SystemExit):
@@ -310,40 +195,12 @@ class RepoReport(BaseHandler):
 
                     visualisations[key] = visualisation
 
-
                 if format == 'notebook':
-                    nb = nbf.new_notebook()
-                    nb.cells.append(nbf.new_markdown_cell(textwrap.dedent('''
-                            ![Health report](https://repo-health-report.herokuapp.com/static/img/heart.png)
-
-                            <h1>Health report for {slug}</h1>
-
-                            <h3>About this notebook</h3>
-
-                            This notebook was originally generated by [repohealth.info](https://repohealth.info/).
-                            You can see the latest version of this report at https://repohealth.info/report/{slug}.
-
-                            **Please note:** This notebook requires python 3 and plotly.
-                            '''.format(slug=uuid))))
-
-                    nb.cells.append(nbf.new_code_cell(
-                        '\n'.join(['# The following data can be retrieved from https://repohealth.info/api/data/{}'.format(uuid),
-                         'import json',
-                         'payload = json.loads(r"""',
-                         json.dumps(payload),
-                         '""".strip())',
-                         ''])))
-                    nb.cells.append(nbf.new_markdown_cell("Now, let's initialise plotly, and recreate the visualisations on [repohealth.info](https://repohealth.info)."))
-                    nb.cells.append(nbf.new_code_cell(['from plotly.offline import iplot, init_notebook_mode\n', 'init_notebook_mode()']))
-                    for visualisation in visualisations.values():
-                        nb.cells.append(nbf.new_markdown_cell(visualisation['title']))
-                        nb.cells.append(nbf.new_code_cell(visualisation['code']))
-                       
-                    content = nbformat.writes(nb, version=4)
+                    content = repohealth.notebook.notebook(uuid, payload, visualisations)
                     self.set_header("Content-Type", 'application/x-ipynb+json')
-                    self.set_header("Content-Disposition", 'attachment; filename="health_{}.ipynb"'.format(uuid.replace('/', '_')))
+                    fname = "health_{}.ipynb".format(uuid.replace('/', '_'))
+                    self.set_header("Content-Disposition", 'attachment; filename="{}'.format(fname))
                     return self.finish(content)
-                    
                 else:
                     self.finish(self.render('report.html', payload=payload, viz=visualisations, repo_slug=uuid))
 
@@ -385,7 +242,7 @@ class APIDataAvailableHandler(BaseHandler):
         executor = self.settings['executor']
 
         if uuid not in datastore:
-            future = executor.submit(fetch_repo_data, uuid, token)
+            future = executor.submit(repohealth.generate.repo_data, uuid, token)
             future._start_time = datetime.datetime.utcnow()
             datastore[uuid] = future
 

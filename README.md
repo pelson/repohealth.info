@@ -1,4 +1,4 @@
-![](https://repo-health-report.herokuapp.com/static/img/heart.png)
+![](https://repohealth.info/static/img/heart.png)
 
 # Github repository health report
 
