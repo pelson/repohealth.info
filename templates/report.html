@@ -25,7 +25,7 @@
       <img style="height: 5em;" src="{{ payload.github.repo.owner.avatar_url }}" />
       {% endif %}
       <div class="caption">
-        {{ payload.github.repo.description|gh_emoji }}
+        {{ (payload.github.repo.description or '')|gh_emoji }}
         <p>
         <a href="{{ payload.github.repo.html_url }}"><i class="fa fa-fw fa-lg fa-github inline-icon"></i>View {{ repo_slug }} on Github</a>
         </p>
