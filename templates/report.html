@@ -21,6 +21,8 @@
       <h3>Repo health report for {{ repo_slug }}</h3>
       {% if 'organization' in payload.github.repo %}
       <img style="height: 5em;" src="{{ payload.github.repo.organization.avatar_url }}" />
+      {% else %}
+      <img style="height: 5em;" src="{{ payload.github.repo.owner.avatar_url }}" />
       {% endif %}
       <div class="caption">
         {{ payload.github.repo.description|gh_emoji }}

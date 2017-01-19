@@ -36,8 +36,10 @@ def commits(repo):
 
             commit_has_stat = False
             commit_lines.append(line.strip())
-    
-    commits = pd.read_csv(StringIO('\n'.join(commit_lines)), sep='|', parse_dates=[0], infer_datetime_format=True, names=['date', 'name', 'email', 'sha', 'changed_files', 'insertions', 'deletions'])
+   
+    headings = ['date', 'name', 'email', 'sha', 'changed_files', 'insertions', 'deletions']
+    commits = pd.read_csv(StringIO('\n'.join(commit_lines)), sep='|', parse_dates=[0],
+                          infer_datetime_format=True, names=headings)
     commits.sort_values('date', inplace=True)
     commits['date'] = commits['date'].apply(lambda x: str(x))
     return {'commits': commits.to_dict(orient='records')}
@@ -53,8 +55,6 @@ def commits(repo):
         row[0] = utc_date
 
         commits.append(row)
-#    for _, row in commits.iterrows():
-#        print(row.to_json())
 
     return commits
 

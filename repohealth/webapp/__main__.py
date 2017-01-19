@@ -135,7 +135,7 @@ class RepoReport(BaseHandler):
                 except (KeyboardInterrupt, SystemExit):
                     raise
                 except Exception as err:
-                    print(traceback.format_exc())
+                    logging.error(traceback.format_exc())
                     self.finish(self.render(
                         'error.html', error=str(err),
                         traceback=traceback.format_exc(),
@@ -184,7 +184,7 @@ class RepoReport(BaseHandler):
 
                     if not isinstance(fig, go.Figure):
                         fig = go.Figure(fig)
-                    fig.layout.margin = go.Margin(t=0, b=40, l=40, r=20, pad=1)
+                    fig.layout.margin = go.Margin(t=4, b=40, l=40, r=20, pad=1)
                     fig.layout.legend = dict(x=0.1, y=1)
                     visualisation = html(fig)
                     del fig
@@ -320,7 +320,7 @@ class APIDataHandler(APIDataAvailableHandler):
                 self.finish(json_encode({'status': 200,
                                          'content': future.result()}))
             except Exception as err:
-                print(traceback.format_exc())
+                logging.error(traceback.format_exc())
                 response = {'status': 500, 'message': str(err),
                             'traceback': traceback.format_exc()}
                 return response

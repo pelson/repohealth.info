@@ -22,14 +22,16 @@ def notebook(uuid, payload, visualisations):
 
         **Please note:** This notebook requires python 3 and plotly.
         '''.format(slug=uuid))))
-
+    import base64
+    encoded_data = base64.b64encode(json.dumps(payload).encode('utf-8'))
     nb.cells.append(nbf.new_code_cell(
         '\n'.join(['# The following data can be retrieved from '
                    'https://repohealth.info/api/data/{}'.format(uuid),
+                   'import base64',
                    'import json',
-                   'payload = json.loads(r"""',
-                   json.dumps(payload),
-                   '""".strip())',
+                   'payload = json.loads(base64.b64decode(\n',
+                   '      {!r}'.format(encoded_data),
+                   '.decode("utf-8")))',
                     ''])))
     nb.cells.append(nbf.new_markdown_cell(
         "Now, let's initialise plotly, and recreate the visualisations on "

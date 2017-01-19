@@ -5,6 +5,7 @@ Compute the data that is used for producing the health report.
 import datetime
 import os
 import json
+import logging
 import shutil
 
 from functools import partial
@@ -27,7 +28,7 @@ STATUS_FILE = os.path.join('ephemeral_storage', '{}.status.json')
 
 
 def clear_cache(uuid):
-    print("Spoiling the cache for {}".format(uuid))
+    logging.info("Spoiling the cache for {}".format(uuid))
     if os.path.exists(CACHE_GH.format(uuid)):
         os.remove(CACHE_GH.format(uuid))
     if os.path.exists(CACHE_COMMITS.format(uuid)):
