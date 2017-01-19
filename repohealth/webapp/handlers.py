@@ -319,7 +319,7 @@ class APIDataHandler(APIDataAvailableHandler):
 
 class MainHandler(BaseHandler):
     def get(self):
-        self.render("index.html")
+        self.finish(self.render("index.html"))
 
     def post(self):
         slug = self.get_argument('slug', None)
