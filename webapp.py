@@ -6,10 +6,13 @@ import json
 import shutil
 import textwrap
 import time
-
+import traceback
 
 import jinja2
 import tornado.autoreload
+from tornado.ioloop import IOLoop
+from functools import partial
+
 import tornado.ioloop
 import tornado.web
 import tornado.httpserver
@@ -24,9 +27,16 @@ import github.GithubException
 from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout
 
 import git_analysis
+import github_stars
 
 import plotly.offline.offline as pl_offline
 import github_emojis
+
+import fetch_issues
+from analysis import PLOTLY_PLOTS
+
+import plotly.graph_objs as go
+import requests
 
 
 class BaseHandler(OAuthBase):
@@ -128,16 +138,10 @@ def fetch_repo_data(uuid, token):
         report['repo'] = repo.raw_data
 
         update_status('Fetching GitHub issues data')
-        import fetch_issues
         
-        from tornado.ioloop import IOLoop
-        from functools import partial
-
+        
         issues_fn = partial(fetch_issues.repo_issues, repo, token)
         issues = loop.run_sync(issues_fn)
-
-        #issues = repo.get_issues(state='all', since=datetime.datetime.utcnow() - datetime.timedelta(days=30))
-        
         user_keys = ['login', 'id']
         issue_keys = ['number', 'comments', 'created_at', 'state', 'closed_at']
 
@@ -146,14 +150,8 @@ def fetch_repo_data(uuid, token):
         report['issues'] = [issue_handler(issue) for issue in issues]
         
         update_status('Fetching GitHub stargazer data')
-#        stargazers = repo.get_stargazers_with_dates()
-        import github_stars
         stargazers_fn = partial(github_stars.repo_stargazers, repo, token)
         stargazers = loop.run_sync(stargazers_fn)
-
-        import pickle
-        with open('stargazers.pkl', 'wb') as fh:
-            pickle.dump(stargazers, fh)
 
         star_keys = ['starred_at']
         def star_handler(star):
@@ -254,7 +252,6 @@ class RepoReport(BaseHandler):
                 except (KeyboardInterrupt, SystemExit):
                     raise
                 except Exception as err:
-                    import traceback
                     print(traceback.format_exc())
                     self.set_status(500)
                     self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(), repo_slug=uuid))
@@ -277,7 +274,6 @@ class RepoReport(BaseHandler):
                                     'id': plotdivid}
                     return plot_content
 
-                from analysis import PLOTLY_PLOTS
 
                 visualisations = OrderedDict()
 
@@ -290,6 +286,11 @@ class RepoReport(BaseHandler):
                     data = prepare(payload)
                     fig = viz(data)
 
+
+                    if not isinstance(fig, go.Figure):
+                        fig = go.Figure(fig)
+                    fig.layout.margin=go.Margin(t=0, b=40, l=40, r=20, pad=1)
+                    fig.layout.legend=dict(x=0.1, y=1)
                     visualisation = html(fig)
                     del fig
 
@@ -436,7 +437,6 @@ class APIDataHandler(APIDataAvailableHandler):
                 self.finish(json_encode({'status': 200,
                                          'content': future.result()}))
             except Exception as err:
-                import traceback
                 print(traceback.format_exc())
                 response = {'status': 500, 'message': str(err), 'traceback': traceback.format_exc()}
                 return response
@@ -509,7 +509,6 @@ if __name__ == '__main__':
 
     def keep_alive(*args):
         # Keeps the heroku process from idling by fetching the logo every 4 minutes.
-        import requests
         requests.get('https://repo-health-report.herokuapp.com/static/img/heart.png')
         
     tornado.ioloop.PeriodicCallback(keep_alive, 4 * 60 * 1000).start()
