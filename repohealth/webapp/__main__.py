@@ -1,6 +1,7 @@
 from concurrent.futures import ProcessPoolExecutor
 from collections import OrderedDict
 import datetime
+import logging
 import os
 import json
 import traceback
@@ -60,11 +61,18 @@ class BaseHandler(OAuthBase):
         content = self.render_template(template_name, **kwargs)
         self.write(content)
 
+    def _handle_request_exception(self, e):
+        tb = traceback.format_exc()
+        logging.error(tb)
+        self.set_status(500)
+        self.finish(self.render('error.html', traceback=tb))
+
 
 class Error404(BaseHandler):
     def prepare(self):
         self.set_status(404)
-        self.finish(self.render('404.html'))
+        self.finish(self.render('error.html',
+            error="This page doesn't exist... well, it does, it's just there is nothing to see here."))
 
 
 def pretty_timedelta(datetime, from_date):
@@ -128,7 +136,6 @@ class RepoReport(BaseHandler):
                     raise
                 except Exception as err:
                     print(traceback.format_exc())
-                    self.set_status(500)
                     self.finish(self.render(
                         'error.html', error=str(err),
                         traceback=traceback.format_exc(),
@@ -140,7 +147,8 @@ class RepoReport(BaseHandler):
                     # A more refined message, rather than the full traceback
                     # form.
                     return self.finish(self.render(
-                        'error.html', error=payload["message"]))
+                        'error.html', error=payload["message"],
+                        repo_slug=uuid))
 
                 def html(fig):
                     config = dict(showLink=False, displaylogo=False)
@@ -163,8 +171,16 @@ class RepoReport(BaseHandler):
                     prepare = getattr(mod, prep_fn_name)
                     viz = getattr(mod, viz_fn_name)
 
-                    data = prepare(payload)
-                    fig = viz(data)
+                    try:
+                        data = prepare(payload)
+                        fig = viz(data)
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as err:
+                        logging.exception('A problem with one of the plotly '
+                                          'plots occured.')
+                        logging.exception(traceback.format_exc())
+                        continue
 
                     if not isinstance(fig, go.Figure):
                         fig = go.Figure(fig)

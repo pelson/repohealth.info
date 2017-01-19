@@ -4,14 +4,26 @@
 
 {% block content %}
 
-<i class="fa fa-fw fa-5x icon-frown"></i>
-
-Unfortunately there was an error...
-
-<pre>
-{{ traceback }}
-{{ error }}
-</pre>
-
-
+<div class="row-centered">
+  <div class="col-sm-10 col-centered">
+    <div class="thumbnail centered thumb-min-height no-box-shadow">
+        <i class="fa fa-fw fa-15x fa-frown-o"></i>
+        <h3>Uh-oh!</h3>
+      <div class="caption">
+        <p>
+        {% if error %}
+            {{ error }}
+        {% else %}
+            Unfortunately there has been an unhandled exception...
+        {% endif %}
+        </p>
+        {% if traceback %}
+        <p>
+        <pre style="text-align: left;">{{ traceback|e }}</pre>
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

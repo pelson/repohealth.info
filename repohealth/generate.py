@@ -76,7 +76,7 @@ def repo_data(uuid, token):
     # status so that our report can deal with it with more grace than simply
     # catching the exception.
     try:
-        repo.url
+        repo.raw_data
     except Exception:
         report = {'status': 404,
                   'message': 'Repository "{}" not found.'.format(uuid)}

@@ -15,6 +15,9 @@ body {
   height: 60px;
 }
 
+.fa-10x { font-size: 10em; }
+.fa-15x { font-size: 15em; }
+
 .branding {
     line-height: 50px;
 }
