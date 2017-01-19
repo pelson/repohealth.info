@@ -26,14 +26,6 @@ from repohealth.analysis import PLOTLY_PLOTS
 
 
 class BaseHandler(OAuthBase):
-    def prepare(self):
-        # Redirect to https in production.
-        url = self.request.full_url()
-        if self.request.protocol == "http" and 'localhost' not in url:
-            self.redirect("https://%s".format(url[len("http://"):]),
-                          permanent=True)
-        super(OAuthBase, self).prepare()
-
     def render_template(self, template_name, **kwargs):
         template_dirs = self.settings["template_path"]
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_dirs))
