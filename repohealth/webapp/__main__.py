@@ -3,45 +3,25 @@ from collections import OrderedDict
 import datetime
 import os
 import json
-import shutil
-import textwrap
-import time
 import traceback
 
+from github import Github
 import jinja2
+import plotly.graph_objs as go
+import plotly.offline.offline as pl_offline
+import requests
 import tornado.autoreload
-from tornado.ioloop import IOLoop
-from functools import partial
-
 import tornado.ioloop
 import tornado.web
 import tornado.httpserver
 from tornado.escape import json_encode
 
-import nbformat
-import nbformat.v4 as nbf
-
-import git
-from github import Github
-import github.GithubException
-
-import plotly.offline.offline as pl_offline
-
-
-import plotly.graph_objs as go
-import requests
-
 from repohealth.auth.github import (
         BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout)
-
-import repohealth.git
-import repohealth.github.stargazers
-import repohealth.github.issues
-import repohealth.github.emojis
-from repohealth.analysis import PLOTLY_PLOTS
-
 import repohealth.notebook
 import repohealth.generate
+import repohealth.github.emojis
+from repohealth.analysis import PLOTLY_PLOTS
 
 
 class BaseHandler(OAuthBase):
@@ -49,7 +29,8 @@ class BaseHandler(OAuthBase):
         # Redirect to https in production.
         url = self.request.full_url()
         if self.request.protocol == "http" and 'localhost' not in url:
-            self.redirect("https://%s".format(url[len("http://"):]), permanent=True)
+            self.redirect("https://%s".format(url[len("http://"):]),
+                          permanent=True)
         super(OAuthBase, self).prepare()
 
     def render_template(self, template_name, **kwargs):
@@ -111,7 +92,8 @@ class RepoReport(BaseHandler):
     def report_not_ready(self, uuid):
         user = self.get_current_user()
         token = user['access_token']
-        self.finish(self.render('report.pending.html', token=token, repo_slug=uuid))
+        self.finish(self.render('report.pending.html',
+                                token=token, repo_slug=uuid))
 
     @tornado.web.authenticated
     def get(self, org_user, repo_name):
@@ -119,15 +101,20 @@ class RepoReport(BaseHandler):
         format = self.get_argument('format', 'html')
         if format not in ['notebook', 'html']:
             self.set_status(400)
-            return self.finish(self.render('error.html', error="Invalid format specified. Please choose either 'notebook' or 'html'.", repo_slug=uuid))
+            return self.finish(self.render(
+                'error.html', repo_slug=uuid,
+                error=("Invalid format specified. Please choose "
+                       "either 'notebook' or 'html'."),))
         datastore = self.settings['datastore']
         if uuid not in datastore:
-            # Do what we do with the data handler (return 202 until we are ready)
+            # Do what we do with the data handler (return 202 until we
+            # are ready)
             return self.report_not_ready(uuid)
         else:
             future = datastore[uuid]
             if not future.done():
-                # Do what we do with the data handler (return 202 until we are ready)
+                # Do what we do with the data handler (return 202 until we
+                # are ready)
                 return self.report_not_ready(uuid)
             else:
                 # Secret-sauce to spoil the cache.
@@ -142,26 +129,31 @@ class RepoReport(BaseHandler):
                 except Exception as err:
                     print(traceback.format_exc())
                     self.set_status(500)
-                    self.finish(self.render('error.html', error=str(err), traceback=traceback.format_exc(), repo_slug=uuid))
+                    self.finish(self.render(
+                        'error.html', error=str(err),
+                        traceback=traceback.format_exc(),
+                        repo_slug=uuid))
                     return
 
                 if payload.get('status', 200) != 200:
                     self.set_status(payload['status'])
-                    # A more refined message, rather than the full traceback form.
-                    return self.finish(self.render('error.html', error=payload["message"]))
-                
+                    # A more refined message, rather than the full traceback
+                    # form.
+                    return self.finish(self.render(
+                        'error.html', error=payload["message"]))
+
                 def html(fig):
                     config = dict(showLink=False, displaylogo=False)
-                    plot_html, plotdivid, width, height = pl_offline._plot_html(
+                    plot_html, plotdivid, w, h = pl_offline._plot_html(
                         fig, config, validate=True,
-                        default_width='100%', default_height='100%', global_requirejs=False)
+                        default_width='100%', default_height='100%',
+                        global_requirejs=False)
 
                     script_split = plot_html.find('<script ')
                     plot_content = {'div': plot_html[:script_split],
                                     'script': plot_html[script_split:],
                                     'id': plotdivid}
                     return plot_content
-
 
                 visualisations = OrderedDict()
 
@@ -170,25 +162,25 @@ class RepoReport(BaseHandler):
                     viz_fn_name = '{}_viz'.format(key)
                     prepare = getattr(mod, prep_fn_name)
                     viz = getattr(mod, viz_fn_name)
-                    
+
                     data = prepare(payload)
                     fig = viz(data)
 
-
                     if not isinstance(fig, go.Figure):
                         fig = go.Figure(fig)
-                    fig.layout.margin=go.Margin(t=0, b=40, l=40, r=20, pad=1)
-                    fig.layout.legend=dict(x=0.1, y=1)
+                    fig.layout.margin = go.Margin(t=0, b=40, l=40, r=20, pad=1)
+                    fig.layout.legend = dict(x=0.1, y=1)
                     visualisation = html(fig)
                     del fig
 
                     with open(mod.__file__, 'r') as fh:
                         mod_source = fh.readlines()
-                    code = ''.join(mod_source + 
-                                     ["\n\n",
-                                      "{} = {}(payload)\n".format(key, prep_fn_name),
-                                      "iplot({}({}))\n".format(viz_fn_name, key),
-                                      ])
+                    code = ''.join(
+                             mod_source +
+                             ["\n\n",
+                              "{} = {}(payload)\n".format(key, prep_fn_name),
+                              "iplot({}({}))\n".format(viz_fn_name, key),
+                              ])
 
                     visualisation['code'] = code
                     visualisation['title'] = title
@@ -196,13 +188,18 @@ class RepoReport(BaseHandler):
                     visualisations[key] = visualisation
 
                 if format == 'notebook':
-                    content = repohealth.notebook.notebook(uuid, payload, visualisations)
-                    self.set_header("Content-Type", 'application/x-ipynb+json')
+                    content = repohealth.notebook.notebook(uuid, payload,
+                                                           visualisations)
                     fname = "health_{}.ipynb".format(uuid.replace('/', '_'))
-                    self.set_header("Content-Disposition", 'attachment; filename="{}'.format(fname))
+
+                    self.set_header("Content-Type", 'application/x-ipynb+json')
+                    self.set_header("Content-Disposition",
+                                    'attachment; filename="{}'.format(fname))
                     return self.finish(content)
                 else:
-                    self.finish(self.render('report.html', payload=payload, viz=visualisations, repo_slug=uuid))
+                    self.finish(self.render('report.html', payload=payload,
+                                            viz=visualisations,
+                                            repo_slug=uuid))
 
 
 class Status(BaseHandler):
@@ -210,7 +207,9 @@ class Status(BaseHandler):
     def get(self):
         user = self.get_current_user()
         gh = Github(user['access_token'])
-        self.finish(self.render('status.html', futures=self.settings['datastore'], user=user, gh=gh))
+        self.finish(self.render('status.html',
+                                futures=self.settings['datastore'],
+                                user=user, gh=gh))
 
 
 class APIDataAvailableHandler(BaseHandler):
@@ -218,7 +217,8 @@ class APIDataAvailableHandler(BaseHandler):
     known_tokens = []
 
     def check_xsrf_cookie(self, *args, **kwargs):
-        # We don't want xsrf checking for this API - the user can come from anywhere, provided they give us a token.
+        # We don't want xsrf checking for this API - the user can come from
+        # anywhere, provided they give us a token.
         pass
 
     # No authentication needed - pass the github token as TOKEN.
@@ -231,7 +231,8 @@ class APIDataAvailableHandler(BaseHandler):
 
     def availablitiy(self, uuid, token):
         """
-        Return a status payload to confirm whether or not the data exists ({'status': 200, ...} for yes)
+        Return a status payload to confirm whether or not the data exists
+        ({'status': 200, ...} for yes)
 
         """
         if token is None:
@@ -242,18 +243,21 @@ class APIDataAvailableHandler(BaseHandler):
         executor = self.settings['executor']
 
         if uuid not in datastore:
-            future = executor.submit(repohealth.generate.repo_data, uuid, token)
+            future = executor.submit(repohealth.generate.repo_data,
+                                     uuid, token)
             future._start_time = datetime.datetime.utcnow()
             datastore[uuid] = future
 
             # The status code should be set to "Submitted, and processing"
             self.set_status(202)
-            response = {'status': 202, 'message': 'Job submitted and is processing.', 'status_info': []}
+            response = {'status': 202,
+                        'message': 'Job submitted and is processing.',
+                        'status_info': []}
             return response
         else:
             future = datastore[uuid]
 
-            status_file = os.path.join('ephemeral_storage', uuid + '.status.json')
+            status_file = repohealth.generate.STATUS_FILE.format(uuid)
             if not os.path.exists(status_file):
                 status = {}
             else:
@@ -261,13 +265,15 @@ class APIDataAvailableHandler(BaseHandler):
                     status = json.load(fh)
 
             if future.done():
-                return {'status': 200, 'message': "ready", 'status_info': status}
+                return {'status': 200, 'message': "ready",
+                        'status_info': status}
             else:
-                response = {'status': 202,
-                            'message': ('Job started {} and is still running.'
-                                        ''.format(pretty_timedelta(future._start_time, datetime.datetime.utcnow()))),
-                            'status_info': status,
-                            }
+                since = pretty_timedelta(future._start_time,
+                                         datetime.datetime.utcnow())
+                message = ('Job started {} and is still running.'
+                           ''.format(since))
+                response = {'status': 202, 'message': message,
+                            'status_info': status}
                 return response
 
 
@@ -277,7 +283,7 @@ class APIDataHandler(APIDataAvailableHandler):
         uuid = '{}/{}'.format(org_user, repo_name)
         token = self.get_current_user()['access_token']
         self.resp(uuid, token)
-    
+
     def post(self, org_user, repo_name):
         uuid = '{}/{}'.format(org_user, repo_name)
         token = self.get_argument('token', None)
@@ -289,16 +295,18 @@ class APIDataHandler(APIDataAvailableHandler):
 
         if response['status'] != 200:
             self.set_status(response['status'])
-            self.finish(json_encode(response)) 
+            self.finish(json_encode(response))
         else:
-            future = datastore = self.settings['datastore'][uuid]
-            # Just because we have the result, doesn't mean it wasn't an exception...
-            try:                    
+            future = self.settings['datastore'][uuid]
+            # Just because we have the result, doesn't mean it wasn't
+            # an exception...
+            try:
                 self.finish(json_encode({'status': 200,
                                          'content': future.result()}))
             except Exception as err:
                 print(traceback.format_exc())
-                response = {'status': 500, 'message': str(err), 'traceback': traceback.format_exc()}
+                response = {'status': 500, 'message': str(err),
+                            'traceback': traceback.format_exc()}
                 return response
 
 
@@ -310,7 +318,9 @@ class MainHandler(BaseHandler):
         slug = self.get_argument('slug', None)
         if slug is None or slug.count('/') != 1:
             self.set_status(400)
-            self.finish(self.render('index.html', input_error='Please enter a valid GitHub repository.', repo_slug=slug))
+            msg = 'Please enter a valid GitHub repository.'
+            self.finish(self.render('index.html', input_error=msg,
+                                    repo_slug=slug))
         else:
             self.redirect('/report/{}'.format(slug))
 
@@ -338,6 +348,7 @@ if __name__ == '__main__':
     datastore = {}
 
     DEBUG = bool(os.environ.get('DEBUG', False))
+    BASE_URL = 'https://repohealth.info' if not DEBUG else None
 
     app = make_app(github_client_id=os.environ['CLIENT_ID'],
                    github_client_secret=os.environ['CLIENT_SECRET'],
@@ -345,7 +356,7 @@ if __name__ == '__main__':
                    github_scope=['user:email'],
                    autoreload=DEBUG, debug=DEBUG,
                    default_handler_class=Error404,
-                   fq_base_uri='https://repohealth.info' if not DEBUG else None,
+                   fq_base_uri=BASE_URL,
                    datastore=datastore)
 
     http_server = tornado.httpserver.HTTPServer(app, xheaders=True)
@@ -368,9 +379,10 @@ if __name__ == '__main__':
         tornado.autoreload.add_reload_hook(executor.shutdown)
 
     def keep_alive(*args):
-        # Keeps the heroku process from idling by fetching the logo every 4 minutes.
-        requests.get('https://repo-health-report.herokuapp.com/static/img/heart.png')
-        
+        # Keeps the heroku process from idling by fetching the logo
+        # every 4 minutes.
+        requests.get('https://repohealth.info/static/img/heart.png')
+
     tornado.ioloop.PeriodicCallback(keep_alive, 4 * 60 * 1000).start()
 
     tornado.ioloop.IOLoop.instance().start()

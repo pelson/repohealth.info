@@ -1,11 +1,8 @@
-import logging
 import json
-import time
+from urllib.parse import urlparse, parse_qs
+
 import github as gh
 from tornado.httpclient import AsyncHTTPClient
-import requests
-
-from urllib.parse import urlparse, parse_qs
 from tornado.gen import coroutine
 
 
@@ -36,7 +33,7 @@ def repo_issues(repo, token):
 
     issues = []
     handle_response(issues, response)
-    
+
     if 'Link' not in response.headers:
         return issues
 
@@ -48,7 +45,8 @@ def repo_issues(repo, token):
     get_issues = partial(handle_response, issues)
     futures = []
     for page in range(2, last_page + 1):
-        url = issues_url + "?per_page={}&page={}&state=all".format(page_size, page)
+        url = ("{}?per_page={}&page={}&state=all"
+               "".format(issues_url, page_size, page))
         f = client.fetch(url, headers=headers, callback=get_issues)
         futures.append(f)
 
@@ -62,11 +60,10 @@ if __name__ == '__main__':
 
     g = gh.Github(token)
     r = g.get_repo('d3/d3')
-#    r = g.get_repo('dask/dask')
+    # r = g.get_repo('dask/dask')
 
     from tornado.ioloop import IOLoop
     from functools import partial
 
-    issues_fn = partial(repo_issues, r, token) 
+    issues_fn = partial(repo_issues, r, token)
     issues = IOLoop.instance().run_sync(issues_fn)
-

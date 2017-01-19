@@ -1,13 +1,11 @@
 import collections
-import logging
 import json
-import time
+import logging
+import traceback
+from urllib.parse import urlparse, parse_qs
+
 import github as gh
 from tornado.httpclient import AsyncHTTPClient
-import requests
-import traceback
-
-from urllib.parse import urlparse, parse_qs
 import tornado.gen
 
 
@@ -22,8 +20,9 @@ def handle_response(container, response):
     content = json.loads(response.body.decode('utf-8'))
     if content:
         for record in content:
-            # Sometimes we were seeing spurious "documentation_url" responses that
-            # hadn't been well handled. These came particularly from the d3/d3 stars request.
+            # Sometimes we were seeing spurious "documentation_url" responses
+            # that hadn't been well handled. These came particularly from the
+            # d3/d3 stars request.
             if isinstance(record, dict):
                 container.append(record)
 
@@ -77,18 +76,21 @@ def repo_stargazers(repo, token):
                 url = future.url
                 error_count[url] += 1
                 if error_count[url] < 5:
-                    f = client.fetch(future.url, headers=headers, callback=get_stargazers)
+                    f = client.fetch(future.url, headers=headers,
+                                     callback=get_stargazers)
                     f.url = future.url
                     futures.append(f)
                 else:
-                    logging.exception('Problem with {} occured. Skipping'.format(url))
+                    logging.exception('A problem with {} occured. '
+                                      'Skipping'.format(url))
                     logging.exception(traceback.format_exc())
         if futures:
-            # Give Github some time to get over our request before we ask again.
+            # Give Github some time to get over our request before we retry.
             yield tornado.gen.sleep(10)
 
     if len(stargazers) != count:
-        logging.warning('The number of expected stargazers ({}) did not match the number we got ({}).'
+        logging.warning('The number of expected stargazers ({}) did not '
+                        'match the number we recieved ({}).'
                         ''.format(count, len(stargazers)))
     return stargazers
 
@@ -99,7 +101,7 @@ if __name__ == '__main__':
 
     g = gh.Github(token)
     r = g.get_repo('d3/d3')
-    #r = g.get_repo('dask/dask')
+    # r = g.get_repo('dask/dask')
     r = g.get_repo('scitools/iris')
 
     from tornado.ioloop import IOLoop

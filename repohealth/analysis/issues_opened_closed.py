@@ -6,9 +6,9 @@ def issues_prep(payload):
     issues = pd.DataFrame.from_dict(payload['github']['issues'])
     issues['created_at'] = pd.to_datetime(issues['created_at'])
     issues['closed_at'] = pd.to_datetime(issues['closed_at'])
-    
+
     issues_open = issues.sort_values(by='created_at')
-    
+
     issues_closed = issues.sort_values(by='closed_at')
     return issues_open, issues_closed[issues_closed['closed_at'].notnull()]
 
@@ -28,4 +28,3 @@ def issues_viz(issues_open_and_closed):
         name='Issues closed'
     )
     return go.Figure(data=[v_issues_open, v_issues_closed])
-
