@@ -32,5 +32,4 @@ mkdir -p $build/.profile.d
 cat <<-'EOF' > $build/.profile.d/conda.sh
     # append to path variable
     export PATH=$HOME/.conda/bin:$PATH
-
 EOF

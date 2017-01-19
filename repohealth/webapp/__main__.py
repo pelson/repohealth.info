@@ -21,26 +21,30 @@ from tornado.escape import json_encode
 import nbformat
 import nbformat.v4 as nbf
 
-import git 
+import git
 from github import Github
 import github.GithubException
-from github_oauth import BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout
-
-import git_analysis
-import github_stars
 
 import plotly.offline.offline as pl_offline
-import github_emojis
 
-import fetch_issues
-from analysis import PLOTLY_PLOTS
 
 import plotly.graph_objs as go
 import requests
 
 
+from repohealth.auth.github import (
+        BaseHandler as OAuthBase, GithubAuthHandler, GithubAuthLogout)
+
+import repohealth.git
+import repohealth.github.stargazers
+import repohealth.github.issues
+import repohealth.github.emojis
+from repohealth.analysis import PLOTLY_PLOTS
+
+
 class BaseHandler(OAuthBase):
     def prepare(self):
+        # Redirect to https in production.
         url = self.request.full_url()
         if self.request.protocol == "http" and 'localhost' not in url:
             self.redirect("https://%s".format(url[len("http://"):]), permanent=True)
@@ -49,7 +53,7 @@ class BaseHandler(OAuthBase):
     def render_template(self, template_name, **kwargs):
         template_dirs = self.settings["template_path"]
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_dirs))
-        env.filters['gh_emoji'] = github_emojis.to_html
+        env.filters['gh_emoji'] = repohealth.github.emojis.to_html
         template = env.get_template(template_name)
         content = template.render(kwargs)
         return content
@@ -71,7 +75,6 @@ class BaseHandler(OAuthBase):
             'handler': self
         })
         content = self.render_template(template_name, **kwargs)
-
         self.write(content)
 
 
@@ -140,7 +143,7 @@ def fetch_repo_data(uuid, token):
         update_status('Fetching GitHub issues data')
         
         
-        issues_fn = partial(fetch_issues.repo_issues, repo, token)
+        issues_fn = partial(repohealth.github.issues.repo_issues, repo, token)
         issues = loop.run_sync(issues_fn)
         user_keys = ['login', 'id']
         issue_keys = ['number', 'comments', 'created_at', 'state', 'closed_at']
@@ -150,7 +153,7 @@ def fetch_repo_data(uuid, token):
         report['issues'] = [issue_handler(issue) for issue in issues]
         
         update_status('Fetching GitHub stargazer data')
-        stargazers_fn = partial(github_stars.repo_stargazers, repo, token)
+        stargazers_fn = partial(repohealth.github.stargazers.repo_stargazers, repo, token)
         stargazers = loop.run_sync(stargazers_fn)
 
         star_keys = ['starred_at']
@@ -176,7 +179,7 @@ def fetch_repo_data(uuid, token):
             repo = git.Repo.clone_from(repo.clone_url, clone_target)     
 
         update_status('Analysing commits')
-        repo_data = git_analysis.commits(repo)
+        repo_data = repohealth.git.commits(repo)
         with open(cache, 'w') as fh:
             json.dump(repo_data, fh)
     else:
