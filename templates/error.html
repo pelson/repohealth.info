@@ -2,6 +2,23 @@
 
 {% set title='Uh-oh!' %}
 
+{% if traceback %}
+{% set github_issue_title = "Traceback from site: '{}'".format(error) %}
+{% set github_issue_body = """
+Hi,
+
+I was looking at {} on repohealth.info and got the following traceback:
+
+```
+{}
+```
+
+Thanks,
+""".format(handler.request.uri, traceback.strip()) %}
+{% endif %}
+
+
+
 {% block content %}
 
 <div class="row-centered">
@@ -21,6 +38,9 @@
         <p>
         <pre style="text-align: left;">{{ traceback|e }}</pre>
         </p>
+        <a href="https://github.com/pelson/repo-health-report/issues/new?title={{ github_issue_title|urlencode }}&body={{ github_issue_body|urlencode }}">
+            You may want to consider reporting this on the repohealth issue tracker...
+        </a>
         {% endif %}
       </div>
     </div>

@@ -11,6 +11,11 @@
 </div>
 {%- endmacro %}
 
+{% if 'organization' in payload.github.repo %}
+{% set org_or_user = payload.github.repo.organization %}
+{% else %}
+{% set org_or_user = payload.github.repo.owner %}
+{% endif %}
 
 {% block content %}
 
@@ -18,12 +23,8 @@
   <div class="clearfix></div>
   <div class="col-sm-6 col-centered">
     <div class="thumbnail centered thumb-min-height">
-      <h3>Repo health report for {{ repo_slug }}</h3>
-      {% if 'organization' in payload.github.repo %}
-      <img style="height: 5em;" src="{{ payload.github.repo.organization.avatar_url }}" />
-      {% else %}
-      <img style="height: 5em;" src="{{ payload.github.repo.owner.avatar_url }}" />
-      {% endif %}
+      <h3>Repo health report for {{ org_or_user.login }}/{{ payload.github.repo.name }}</h3>
+      <img style="height: 5em;" src="{{ org_or_user.avatar_url }}" />
       <div class="caption">
         {{ (payload.github.repo.description or '')|gh_emoji }}
         <p>

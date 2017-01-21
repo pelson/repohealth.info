@@ -64,9 +64,10 @@ def repo_stargazers(repo, token):
         f.url = url
         futures.append(f)
 
-    error_count = collections.defaultdict(lambda: 0)
+    error_count = 0
 
     while futures:
+        waited = False
         for future in futures[:]:
             future = futures.pop(0)
             try:
@@ -74,19 +75,25 @@ def repo_stargazers(repo, token):
             except tornado.httpclient.HTTPError as err:
                 # Try again, but give it a little while...
                 url = future.url
-                error_count[url] += 1
-                if error_count[url] < 5:
+                if error_count < 5:
                     f = client.fetch(future.url, headers=headers,
                                      callback=get_stargazers)
                     f.url = future.url
                     futures.append(f)
                 else:
-                    logging.exception('A problem with {} occured. '
-                                      'Skipping'.format(url))
+                    if not waited:
+                        # Give Github some time to get over our request
+                        # before we retry.
+                        logging.exception("Sleeping attempt {} to rectify "
+                                          "fetch error.".format(error_count))
+                        yield tornado.gen.sleep(15)
+                        error_count += 1
+                        waited = True
+
+                    logging.exception('A problem with {} occured after {} '
+                                      'attempts. Skipping'
+                                      ''.format(url, error_count))
                     logging.exception(traceback.format_exc())
-        if futures:
-            # Give Github some time to get over our request before we retry.
-            yield tornado.gen.sleep(10)
 
     if len(stargazers) != count:
         logging.warning('The number of expected stargazers ({}) did not '

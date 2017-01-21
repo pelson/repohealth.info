@@ -1,4 +1,3 @@
-from collections import OrderedDict
 import datetime
 import logging
 import os
@@ -7,8 +6,6 @@ import traceback
 
 from github import Github
 import jinja2
-import plotly.graph_objs as go
-import plotly.offline.offline as pl_offline
 import tornado.autoreload
 import tornado.ioloop
 import tornado.web
@@ -20,7 +17,10 @@ from repohealth.auth.github import (
 import repohealth.notebook
 import repohealth.generate
 import repohealth.github.emojis
-from repohealth.analysis import PLOTLY_PLOTS
+
+
+def repo_uuid(org_or_user, repo_name):
+    return '{}/{}'.format(org_or_user, repo_name).lower()
 
 
 class BaseHandler(OAuthBase):
@@ -88,16 +88,18 @@ def pretty_timedelta(datetime, from_date):
 
 
 class RepoReport(BaseHandler):
-    def report_not_ready(self, uuid):
-        user = self.get_current_user()
-        token = user['access_token']
+    def report_not_ready(self, uuid, token):
         self.set_status(202)
         self.finish(self.render('report.pending.html',
                                 token=token, repo_slug=uuid))
 
     @tornado.web.authenticated
+    @tornado.gen.coroutine
     def get(self, org_user, repo_name):
-        uuid = '{}/{}'.format(org_user, repo_name)
+        uuid = repo_uuid(org_user, repo_name)
+        user = self.get_current_user()
+        token = user['access_token']
+
         format = self.get_argument('format', 'html')
         if format not in ['notebook', 'html']:
             self.set_status(400)
@@ -105,109 +107,56 @@ class RepoReport(BaseHandler):
                 'error.html', repo_slug=uuid,
                 error=("Invalid format specified. Please choose "
                        "either 'notebook' or 'html'."),))
+
         datastore = self.settings['datastore']
-        if uuid not in datastore:
+        if not (uuid in datastore and datastore[uuid].done()):
             # Do what we do with the data handler (return 202 until we
             # are ready)
-            return self.report_not_ready(uuid)
+            return self.report_not_ready(uuid, token)
         else:
             future = datastore[uuid]
-            if not future.done():
-                # Do what we do with the data handler (return 202 until we
-                # are ready)
-                return self.report_not_ready(uuid)
+            # Secret-sauce to spoil the cache.
+            if self.get_argument('cache', '') == 'spoil':
+                repohealth.generate.clear_cache(uuid)
+                datastore.pop(uuid)
+                return self.redirect(self.request.uri.split('?')[0])
+            try:
+                was_good = future.result()
+                data_fn = tornado.gen.coroutine(repohealth.generate.repo_data)
+                payload = yield data_fn(uuid, token)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as err:
+                logging.error(traceback.format_exc())
+                self.finish(self.render(
+                    'error.html', error=str(err),
+                    traceback=traceback.format_exc(),
+                    repo_slug=uuid))
+                return
+
+            if payload.get('status', 200) != 200:
+                self.set_status(payload['status'])
+                # A more refined message, rather than the full traceback
+                # form.
+                return self.finish(self.render(
+                    'error.html', error=payload["message"],
+                    repo_slug=uuid))
+            viz_fn = tornado.gen.coroutine(repohealth.generate.visualisations)
+            visualisations = yield viz_fn(payload)
+
+            if format == 'notebook':
+                content = repohealth.notebook.notebook(uuid, payload,
+                                                       visualisations)
+                fname = "health_{}.ipynb".format(uuid.replace('/', '_'))
+
+                self.set_header("Content-Type", 'application/x-ipynb+json')
+                self.set_header("Content-Disposition",
+                                'attachment; filename="{}'.format(fname))
+                return self.finish(content)
             else:
-                # Secret-sauce to spoil the cache.
-                if self.get_argument('cache', '') == 'spoil':
-                    repohealth.generate.clear_cache(uuid)
-                    datastore.pop(uuid)
-                    return self.redirect(self.request.uri.split('?')[0])
-                try:
-                    payload = datastore[uuid].result()
-                except (KeyboardInterrupt, SystemExit):
-                    raise
-                except Exception as err:
-                    logging.error(traceback.format_exc())
-                    self.finish(self.render(
-                        'error.html', error=str(err),
-                        traceback=traceback.format_exc(),
-                        repo_slug=uuid))
-                    return
-
-                if payload.get('status', 200) != 200:
-                    self.set_status(payload['status'])
-                    # A more refined message, rather than the full traceback
-                    # form.
-                    return self.finish(self.render(
-                        'error.html', error=payload["message"],
-                        repo_slug=uuid))
-
-                def html(fig):
-                    config = dict(showLink=False, displaylogo=False)
-                    plot_html, plotdivid, w, h = pl_offline._plot_html(
-                        fig, config, validate=True,
-                        default_width='100%', default_height='100%',
-                        global_requirejs=False)
-
-                    script_split = plot_html.find('<script ')
-                    plot_content = {'div': plot_html[:script_split],
-                                    'script': plot_html[script_split:],
-                                    'id': plotdivid}
-                    return plot_content
-
-                visualisations = OrderedDict()
-
-                for key, title, mod in PLOTLY_PLOTS:
-                    prep_fn_name = '{}_prep'.format(key)
-                    viz_fn_name = '{}_viz'.format(key)
-                    prepare = getattr(mod, prep_fn_name)
-                    viz = getattr(mod, viz_fn_name)
-
-                    try:
-                        data = prepare(payload)
-                        fig = viz(data)
-                    except KeyboardInterrupt:
-                        raise
-                    except Exception as err:
-                        logging.exception('A problem with one of the plotly '
-                                          'plots occured.')
-                        logging.exception(traceback.format_exc())
-                        continue
-
-                    if not isinstance(fig, go.Figure):
-                        fig = go.Figure(fig)
-                    fig.layout.margin = go.Margin(t=4, b=40, l=40, r=20, pad=1)
-                    fig.layout.legend = dict(x=0.1, y=1)
-                    visualisation = html(fig)
-                    del fig
-
-                    with open(mod.__file__, 'r') as fh:
-                        mod_source = fh.readlines()
-                    code = ''.join(
-                             mod_source +
-                             ["\n\n",
-                              "{} = {}(payload)\n".format(key, prep_fn_name),
-                              "iplot({}({}))\n".format(viz_fn_name, key),
-                              ])
-
-                    visualisation['code'] = code
-                    visualisation['title'] = title
-
-                    visualisations[key] = visualisation
-
-                if format == 'notebook':
-                    content = repohealth.notebook.notebook(uuid, payload,
-                                                           visualisations)
-                    fname = "health_{}.ipynb".format(uuid.replace('/', '_'))
-
-                    self.set_header("Content-Type", 'application/x-ipynb+json')
-                    self.set_header("Content-Disposition",
-                                    'attachment; filename="{}'.format(fname))
-                    return self.finish(content)
-                else:
-                    self.finish(self.render('report.html', payload=payload,
-                                            viz=visualisations,
-                                            repo_slug=uuid))
+                self.finish(self.render('report.html', payload=payload,
+                                        viz=visualisations,
+                                        repo_slug=uuid))
 
 
 class Status(BaseHandler):
@@ -251,7 +200,7 @@ class APIDataAvailableHandler(BaseHandler):
         executor = self.settings['executor']
 
         if uuid not in datastore:
-            future = executor.submit(repohealth.generate.repo_data,
+            future = executor.submit(repohealth.generate.prepare_repo_data,
                                      uuid, token)
             future._start_time = datetime.datetime.utcnow()
             datastore[uuid] = future
@@ -288,12 +237,12 @@ class APIDataAvailableHandler(BaseHandler):
 class APIDataHandler(APIDataAvailableHandler):
     @tornado.web.authenticated
     def get(self, org_user, repo_name):
-        uuid = '{}/{}'.format(org_user, repo_name)
+        uuid = repo_uuid(org_user, repo_name)
         token = self.get_current_user()['access_token']
         self.resp(uuid, token)
 
     def post(self, org_user, repo_name):
-        uuid = '{}/{}'.format(org_user, repo_name)
+        uuid = repo_uuid(org_user, repo_name)
         token = self.get_argument('token', None)
         self.resp(uuid, token)
 
@@ -309,10 +258,12 @@ class APIDataHandler(APIDataAvailableHandler):
             # Just because we have the result, doesn't mean it wasn't
             # an exception...
             try:
-                self.finish(json_encode({'status': 200,
-                                         'content': future.result()}))
+                self.finish(json_encode(
+                    {'status': 200,
+                     'content': repohealth.generate.repo_data(uuid, token)}))
             except Exception as err:
                 logging.error(traceback.format_exc())
+                self.set_status(500)
                 response = {'status': 500, 'message': str(err),
                             'traceback': traceback.format_exc()}
                 return response

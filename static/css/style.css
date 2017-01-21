@@ -8,6 +8,10 @@ body {
     margin-bottom: 60px;
 }
 
+.pad-below {
+    padding-bottom: 4em;
+}
+
 .footer {
   position: absolute;
   bottom: 0;
@@ -77,6 +81,11 @@ body {
     border-radius: 0px;
 }
 
+#status_icon h3 {
+margin-bottom: -2em;
+padding: -2em;
+top: -2em;
+}
 #status_log li {
     min-height: 3.5em;
     padding-top: 1em;
