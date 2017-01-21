@@ -66,7 +66,7 @@ function redirect_when_ready() {
                         $('#status_message').html('Reloading page now that the resource is available.');
                         location.reload();
                       } else {
-                        setTimeout(redirect_when_ready, 1000);
+                        setTimeout(redirect_when_ready, 800);
                       }
                      },
             error: function(data, hmmm, status) {

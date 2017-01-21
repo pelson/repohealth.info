@@ -91,6 +91,7 @@ class RepoReport(BaseHandler):
     def report_not_ready(self, uuid):
         user = self.get_current_user()
         token = user['access_token']
+        self.set_status(202)
         self.finish(self.render('report.pending.html',
                                 token=token, repo_slug=uuid))
 
