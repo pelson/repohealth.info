@@ -38,6 +38,15 @@ def make_app(**kwargs):
     return app
 
 
+@tornado.gen.coroutine
+def keep_alive():
+    while True:
+        client = tornado.httpclient.AsyncHTTPClient()
+        response = yield client.fetch("https://repohealth.info/static/img/heart.png")
+        # Sleep for 8 mins and do the same again...
+        yield tornado.gen.sleep(8 * 60)
+
+
 def main():
     # Our datastore is simply a dictionary of {Repo UUID: Future objects}
     datastore = {}
@@ -60,7 +69,8 @@ def main():
     # https://devcenter.heroku.com/articles/optimizing-dyno-usage#python
     n_processes = int(os.environ.get("WEB_CONCURRENCY", 1))
 
-    if n_processes == 1 or DEBUG:
+    # Disable concurrent servers for now, as we were filling our memory on heroku... :(
+    if True or n_processes == 1 or DEBUG:
         http_server.listen(port)
     else:
         # http://www.tornadoweb.org/en/stable/guide/running.html#processes-and-ports
@@ -73,12 +83,7 @@ def main():
     if DEBUG:
         tornado.autoreload.add_reload_hook(executor.shutdown)
 
-    def keep_alive(*args):
-        # Keeps the heroku process from idling by fetching the logo
-        # every 4 minutes.
-        requests.get('http://repohealth.info/static/img/heart.png')
-
-    tornado.ioloop.PeriodicCallback(keep_alive, 4 * 60 * 1000).start()
+    tornado.ioloop.IOLoop.current().spawn_callback(keep_alive)
 
     last_message = [None]
     def report_mem():
