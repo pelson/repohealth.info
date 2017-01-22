@@ -25,6 +25,7 @@ import repohealth.github.emojis
 from repohealth.analysis import PLOTLY_PLOTS
 
 
+CACHE_EXCEPTION = os.path.join('ephemeral_storage', '{}.exception.json')
 CACHE_GH = os.path.join('ephemeral_storage', '{}.github.json')
 CACHE_COMMITS = os.path.join('ephemeral_storage', '{}.commits.json')
 CACHE_CLONE = os.path.join('ephemeral_storage', '{}')
@@ -34,6 +35,8 @@ STATUS_FILE = os.path.join('ephemeral_storage', '{}.status.json')
 
 def clear_cache(uuid):
     logging.info("Spoiling the cache for {}".format(uuid))
+    if os.path.exists(CACHE_EXCEPTION.format(uuid)):
+        os.remove(CACHE_EXCEPTION.format(uuid))
     if os.path.exists(CACHE_GH.format(uuid)):
         os.remove(CACHE_GH.format(uuid))
     if os.path.exists(CACHE_COMMITS.format(uuid)):
@@ -42,21 +45,38 @@ def clear_cache(uuid):
         shutil.rmtree(CACHE_CLONE.format(uuid))
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def no_raise(uuid):
+    cache_file = CACHE_EXCEPTION.format(uuid)
+    try:
+        yield
+    except (KeyboardError, SystemExit):
+        raise
+    except Exception as err:
+        result = {'status': getattr(err, 'code', 500),
+                  'message': str(err),
+                  'traceback': traceback.format_exc()}
+        with open(cache_file, 'w') as fh:
+            json.dump(result, fh)
+        return result
+
+
 def cache_available(uuid):
-    avail = (os.path.exists(CACHE_GH.format(uuid)) and
-             os.path.exists(CACHE_COMMITS.format(uuid)) and
-             os.path.exists(CACHE_CLONE.format(uuid)))
+    avail = ((os.path.exists(CACHE_GH.format(uuid)) and
+              os.path.exists(CACHE_COMMITS.format(uuid))) or
+             os.path.exists(CACHE_EXCEPTION.format(uuid)))
     return avail
 
 
 def prepare_repo_data(uuid, token):
     # A function that doesn't give you the data, it just makes
     # sure it is all available in the cache.
-    try:
-        _ = repo_data(uuid, token)
-        return True
-    except:
-        raise
+    result = repo_data(uuid, token)
+    status = result.get('status', 200)
+    return status
 
 
 def repo_data(uuid, token):
@@ -89,112 +109,121 @@ def repo_data(uuid, token):
         with open(status_file, 'w') as fh:
             json.dump(status, fh)
 
-    cache = CACHE_GH.format(uuid)
-    dirname = os.path.dirname(cache)
-    # Ensure the storage location exists.
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
+    cache_file = CACHE_EXCEPTION.format(uuid)
+    if os.path.exists(cache_file):
+        with open(cache_file, 'r') as fh:
+            result = json.load(fh)
+            return result
 
-    if os.path.exists(cache):
-        update_status('Load GitHub API data from ephemeral cache', clear=True)
-        with open(cache, 'r') as fh:
-            report = json.load(fh)
-        # We don't stop here - there is more to the report to add...
-    else:
-        update_status('Initial validation of repo', clear=True)
-        g = Github(token)
-        gh_repo = g.get_repo(uuid)
+    with no_raise(uuid):
+        cache = CACHE_GH.format(uuid)
+        dirname = os.path.dirname(cache)
+        # Ensure the storage location exists.
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
 
-        # Check that this is actually a valid repository. If not, return a known
-        # status so that our report can deal with it with more grace than simply
-        # catching the exception.
-        try:
-            gh_repo.raw_data
-        except Exception:
-            report = {'status': 404,
-                      'message': 'Repository "{}" not found.'.format(uuid)}
-            return report
-
-        report = {}
-
-        loop = tornado.ioloop.IOLoop()
-
-        update_status('Fetching GitHub API data')
-        report['repo'] = gh_repo.raw_data
-
-        update_status('Fetching GitHub issues data')
-
-        issues_fn = partial(repohealth.github.issues.repo_issues, gh_repo, token)
-        issues = loop.run_sync(issues_fn)
-        user_keys = ['login', 'id']
-        issue_keys = ['number', 'comments', 'created_at', 'state', 'closed_at']
-
-        def handle_issue(issue):
-            return dict(**{'user/{}'.format(key): issue['user'][key]
-                           for key in user_keys},
-                        **{key: issue[key] for key in issue_keys})
-        report['issues'] = [handle_issue(issue) for issue in issues]
-
-        update_status('Fetching GitHub stargazer data')
-        stargazers_fn = partial(repohealth.github.stargazers.repo_stargazers,
-                                gh_repo, token)
-        stargazers = loop.run_sync(stargazers_fn)
-
-        star_keys = ['starred_at']
-
-        def handle_star(star):
-            return dict(**{'user/{}'.format(key): star['user'][key]
-                           for key in user_keys},
-                        **{key: star[key] for key in star_keys})
-
-        report['stargazers'] = [handle_star(stargazer)
-                                for stargazer in stargazers
-                                if isinstance(stargazer, dict)]
-
-        with open(cache, 'w') as fh:
-            json.dump(report, fh)
-
-    cache = CACHE_COMMITS.format(uuid)
-    if not os.path.exists(cache):
-        clone_target = CACHE_CLONE.format(uuid)
-        clone_exists = os.path.exists(clone_target)
-
-        if clone_exists:
-            # For local dev, we just fetch anything that already sits in the ephemeral cache.
-            update_status('Fetching remotes from cached clone')
-            repo = git.Repo(clone_target)
-            for remote in repo.remotes:
-                remote.fetch()
+        if os.path.exists(cache):
+            update_status('Load GitHub API data from ephemeral cache', clear=True)
+            with open(cache, 'r') as fh:
+                report = json.load(fh)
+            # We don't stop here - there is more to the report to add...
         else:
-            update_status('Cloning repo')
+            update_status('Initial validation of repo', clear=True)
+            g = Github(token)
+            gh_repo = g.get_repo(uuid)
 
-            class Progress(git.remote.RemoteProgress):
-                def update(self, op_code, cur_count, max_count=None, message=''):
-                    if message:
-                        update_status('Cloning repo: {}'.format(message), update=True)
+            # Check that this is actually a valid repository. If not, return a known
+            # status so that our report can deal with it with more grace than simply
+            # catching the exception.
+            try:
+                gh_repo.raw_data
+            except Exception:
+                report = {'status': 404,
+                          'message': 'Repository "{}" not found.'.format(uuid)}
+                with open(CACHE_EXCEPTION.format(uuid), 'w') as fh:
+                    json.dump(report, fh)
+                return report
 
-            repo = git.Repo.clone_from(report['repo']['clone_url'], clone_target,
-                                       progress=Progress())
+            report = {}
 
-        update_status('Analysing commits')
-        repo_data = repohealth.git.commits(repo)
-        with open(cache, 'w') as fh:
-            json.dump(repo_data, fh)
+            loop = tornado.ioloop.IOLoop()
 
-        if not clone_exists:
-            # This was ours to clone, so nuke it now.
-            shutil.rmtree(clone_target)
+            update_status('Fetching GitHub API data')
+            report['repo'] = gh_repo.raw_data
 
-    else:
-        update_status('Load commit from ephemeral cache')
-        with open(cache, 'r') as fh:
-            repo_data = json.load(fh)
+            update_status('Fetching GitHub issues data')
 
-    # Round off the status so that the last task has an end time.
-    update_status()
+            issues_fn = partial(repohealth.github.issues.repo_issues, gh_repo, token)
+            issues = loop.run_sync(issues_fn)
+            user_keys = ['login', 'id']
+            issue_keys = ['number', 'comments', 'created_at', 'state', 'closed_at']
 
-    repo_data['github'] = report
-    return repo_data
+            def handle_issue(issue):
+                return dict(**{'user/{}'.format(key): issue['user'][key]
+                               for key in user_keys},
+                            **{key: issue[key] for key in issue_keys})
+            report['issues'] = [handle_issue(issue) for issue in issues]
+
+            update_status('Fetching GitHub stargazer data')
+            stargazers_fn = partial(repohealth.github.stargazers.repo_stargazers,
+                                    gh_repo, token)
+            stargazers = loop.run_sync(stargazers_fn)
+
+            star_keys = ['starred_at']
+
+            def handle_star(star):
+                return dict(**{'user/{}'.format(key): star['user'][key]
+                               for key in user_keys},
+                            **{key: star[key] for key in star_keys})
+
+            report['stargazers'] = [handle_star(stargazer)
+                                    for stargazer in stargazers
+                                    if isinstance(stargazer, dict)]
+
+            with open(cache, 'w') as fh:
+                json.dump(report, fh)
+
+        cache = CACHE_COMMITS.format(uuid)
+        if not os.path.exists(cache):
+            clone_target = CACHE_CLONE.format(uuid)
+            clone_exists = os.path.exists(clone_target)
+
+            if clone_exists:
+                # For local dev, we just fetch anything that already sits in the ephemeral cache.
+                update_status('Fetching remotes from cached clone')
+                repo = git.Repo(clone_target)
+                for remote in repo.remotes:
+                    remote.fetch()
+            else:
+                update_status('Cloning repo')
+
+                class Progress(git.remote.RemoteProgress):
+                    def update(self, op_code, cur_count, max_count=None, message=''):
+                        if message:
+                            update_status('Cloning repo: {}'.format(message), update=True)
+
+                repo = git.Repo.clone_from(report['repo']['clone_url'], clone_target,
+                                           progress=Progress())
+
+            update_status('Analysing commits')
+            repo_data = repohealth.git.commits(repo)
+            with open(cache, 'w') as fh:
+                json.dump(repo_data, fh)
+
+            if not clone_exists:
+                # This was ours to clone, so nuke it now.
+                shutil.rmtree(clone_target)
+
+        else:
+            update_status('Load commit from ephemeral cache')
+            with open(cache, 'r') as fh:
+                repo_data = json.load(fh)
+
+        # Round off the status so that the last task has an end time.
+        update_status()
+
+        repo_data['github'] = report
+        return repo_data
 
 
 def visualisations(payload):

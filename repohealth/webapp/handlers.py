@@ -109,38 +109,39 @@ class RepoReport(BaseHandler):
                        "either 'notebook' or 'html'."),))
 
         datastore = self.settings['datastore']
-        if not (uuid in datastore and datastore[uuid].done()):
+
+        if not repohealth.generate.cache_available(uuid):
             # Do what we do with the data handler (return 202 until we
             # are ready)
             return self.report_not_ready(uuid, token)
         else:
-            future = datastore[uuid]
             # Secret-sauce to spoil the cache.
             if self.get_argument('cache', '') == 'spoil':
+                if uuid in datastore:
+                    datastore.pop(uuid)
                 repohealth.generate.clear_cache(uuid)
-                datastore.pop(uuid)
                 return self.redirect(self.request.uri.split('?')[0])
-            try:
-                was_good = future.result()
-                data_fn = tornado.gen.coroutine(repohealth.generate.repo_data)
-                payload = yield data_fn(uuid, token)
-            except (KeyboardInterrupt, SystemExit):
-                raise
-            except Exception as err:
-                logging.error(traceback.format_exc())
-                self.finish(self.render(
-                    'error.html', error=str(err),
-                    traceback=traceback.format_exc(),
-                    repo_slug=uuid))
-                return
+            data_fn = tornado.gen.coroutine(repohealth.generate.repo_data)
+            payload = yield data_fn(uuid, token)
 
             if payload.get('status', 200) != 200:
-                self.set_status(payload['status'])
-                # A more refined message, rather than the full traceback
-                # form.
-                return self.finish(self.render(
-                    'error.html', error=payload["message"],
-                    repo_slug=uuid))
+                code = getattr(payload, 'status', 500)
+                self.set_status(code)
+
+                if 'traceback' in payload:
+                    logging.error(payload['traceback'])
+                    self.finish(self.render(
+                        'error.html', error=payload['message'],
+                        traceback=payload['traceback'],
+                        repo_slug=uuid))
+                    return
+                else:
+                    # A more refined message, rather than the full traceback
+                    # form.
+                    return self.finish(self.render(
+                        'error.html', error=payload["message"],
+                        repo_slug=uuid))
+
             viz_fn = tornado.gen.coroutine(repohealth.generate.visualisations)
             visualisations = yield viz_fn(payload)
 
@@ -173,6 +174,13 @@ class APIDataAvailableHandler(BaseHandler):
     known_uuid = []
     known_tokens = []
 
+    def _handle_request_exception(self, e):
+        tb = traceback.format_exc()
+        logging.error(tb)
+        self.set_header('Content-Type', 'application/json')
+        self.set_status(500)
+        self.finish({'status': 500, 'message': str(tb), 'traceback': tb})
+
     def check_xsrf_cookie(self, *args, **kwargs):
         # We don't want xsrf checking for this API - the user can come from
         # anywhere, provided they give us a token.
@@ -199,11 +207,23 @@ class APIDataAvailableHandler(BaseHandler):
         datastore = self.settings['datastore']
         executor = self.settings['executor']
 
+        status_file = repohealth.generate.STATUS_FILE.format(uuid)
+        if not os.path.exists(status_file):
+            status = {}
+        else:
+            with open(status_file, 'r') as fh:
+                status = json.load(fh)
+
+        if repohealth.generate.cache_available(uuid):
+            return {'status': 200, 'message': "ready",
+                    'status_info': status}
+
         if uuid not in datastore:
             future = executor.submit(repohealth.generate.prepare_repo_data,
                                      uuid, token)
             future._start_time = datetime.datetime.utcnow()
             datastore[uuid] = future
+            future.add_done_callback(lambda future: datastore.pop(uuid))
 
             # The status code should be set to "Submitted, and processing"
             self.set_status(202)
@@ -213,25 +233,13 @@ class APIDataAvailableHandler(BaseHandler):
             return response
         else:
             future = datastore[uuid]
-
-            status_file = repohealth.generate.STATUS_FILE.format(uuid)
-            if not os.path.exists(status_file):
-                status = {}
-            else:
-                with open(status_file, 'r') as fh:
-                    status = json.load(fh)
-
-            if future.done():
-                return {'status': 200, 'message': "ready",
+            since = pretty_timedelta(future._start_time,
+                                     datetime.datetime.utcnow())
+            message = ('Job started {} and is still running.'
+                       ''.format(since))
+            response = {'status': 202, 'message': message,
                         'status_info': status}
-            else:
-                since = pretty_timedelta(future._start_time,
-                                         datetime.datetime.utcnow())
-                message = ('Job started {} and is still running.'
-                           ''.format(since))
-                response = {'status': 202, 'message': message,
-                            'status_info': status}
-                return response
+            return response
 
 
 class APIDataHandler(APIDataAvailableHandler):
@@ -249,24 +257,21 @@ class APIDataHandler(APIDataAvailableHandler):
     def resp(self, uuid, token):
         self.set_header('Content-Type', 'application/json')
         response = self.availablitiy(uuid, token)
-
         if response['status'] != 200:
             self.set_status(response['status'])
             self.finish(json_encode(response))
         else:
-            future = self.settings['datastore'][uuid]
+            result = repohealth.generate.repo_data(uuid, token)
             # Just because we have the result, doesn't mean it wasn't
             # an exception...
-            try:
+            if result.get('status', 200) != 200:
+                self.set_status(result['status'])
+                logging.error(result)
+                return self.finish(json_encode(result))
+            else:
                 self.finish(json_encode(
                     {'status': 200,
-                     'content': repohealth.generate.repo_data(uuid, token)}))
-            except Exception as err:
-                logging.error(traceback.format_exc())
-                self.set_status(500)
-                response = {'status': 500, 'message': str(err),
-                            'traceback': traceback.format_exc()}
-                return response
+                     'content': result}))
 
 
 class MainHandler(BaseHandler):

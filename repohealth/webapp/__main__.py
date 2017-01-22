@@ -80,6 +80,15 @@ def main():
 
     tornado.ioloop.PeriodicCallback(keep_alive, 4 * 60 * 1000).start()
 
+    last_message = [None]
+    def report_mem():
+        message = 'Memory usage {:8.0f}MB'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024/1024)
+        if message != last_message[-1]:
+            last_message[-1] = message
+            logging.info(message)
+    import resource, logging
+    tornado.ioloop.PeriodicCallback(report_mem, 1000).start()
+
     enable_pretty_logging()
     tornado.ioloop.IOLoop.instance().start()
 
