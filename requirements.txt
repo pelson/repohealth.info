@@ -4,3 +4,4 @@ pandas
 requests
 numpy
 nbformat
+fasteners

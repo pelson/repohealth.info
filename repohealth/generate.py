@@ -2,15 +2,16 @@
 Compute the data that is used for producing the health report.
 
 """
-import datetime
 from collections import OrderedDict
+import datetime
+from functools import partial
 import os
 import json
 import logging
 import shutil
+import traceback
 
-from functools import partial
-
+import fasteners
 import tornado.ioloop
 
 import git
@@ -31,6 +32,7 @@ CACHE_COMMITS = os.path.join('ephemeral_storage', '{}.commits.json')
 CACHE_CLONE = os.path.join('ephemeral_storage', '{}')
 CACHE_PLOTS = os.path.join('ephemeral_storage', '{}.plots.json')
 STATUS_FILE = os.path.join('ephemeral_storage', '{}.status.json')
+STATUS_LOCK_FILE = os.path.join('ephemeral_storage', '{}.status.lock.json')
 
 
 def clear_cache(uuid):
@@ -53,7 +55,7 @@ def no_raise(uuid):
     cache_file = CACHE_EXCEPTION.format(uuid)
     try:
         yield
-    except (KeyboardError, SystemExit):
+    except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as err:
         result = {'status': getattr(err, 'code', 500),
@@ -71,6 +73,16 @@ def cache_available(uuid):
     return avail
 
 
+def job_status(uuid):
+    status_file = STATUS_FILE.format(uuid)
+    if not os.path.exists(status_file):
+        status = {}
+    else:
+        with fasteners.InterProcessLock(STATUS_LOCK_FILE.format(uuid)):
+            with open(status_file, 'r') as fh:
+                status = json.load(fh)
+
+
 def prepare_repo_data(uuid, token):
     # A function that doesn't give you the data, it just makes
     # sure it is all available in the cache.
@@ -82,32 +94,33 @@ def prepare_repo_data(uuid, token):
 def repo_data(uuid, token):
     def update_status(message=None, clear=False, update=False):
         status_file = STATUS_FILE.format(uuid)
+        status_lock = fasteners.InterProcessLock(STATUS_LOCK_FILE.format(uuid))
 
-        if not os.path.exists(status_file) or clear:
-            status = []
-        else:
-            with open(status_file, 'r') as fh:
-                status = json.load(fh)
-
-        if status and not update:
-            # Log the last status item as complete.
-            now = datetime.datetime.utcnow()
-            status[-1]['end'] = now.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-        # Allow for the option of not adding a status message so that we can
-        # call this function to close off the previous message once it is
-        # complete.
-        if message is not None:
-            if update:
-                status[-1]['status'] = message
+        with status_lock:
+            if not os.path.exists(status_file) or clear:
+                status = []
             else:
-                now = datetime.datetime.utcnow()
-                status.append(dict(start=now.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                                   status=message))
+                with open(status_file, 'r') as fh:
+                    status = json.load(fh)
 
-        # TODO: Use a lock to avoid race conditions on read/write of status.
-        with open(status_file, 'w') as fh:
-            json.dump(status, fh)
+            if status and not update:
+                # Log the last status item as complete.
+                now = datetime.datetime.utcnow()
+                status[-1]['end'] = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+            # Allow for the option of not adding a status message so that we can
+            # call this function to close off the previous message once it is
+            # complete.
+            if message is not None:
+                if update:
+                    status[-1]['status'] = message
+                else:
+                    now = datetime.datetime.utcnow()
+                    status.append(dict(start=now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                                       status=message))
+
+            with open(status_file, 'w') as fh:
+                json.dump(status, fh)
 
     cache_file = CACHE_EXCEPTION.format(uuid)
     if os.path.exists(cache_file):
@@ -251,7 +264,7 @@ def visualisations(payload):
         try:
             data = prepare(payload)
             fig = viz(data)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as err:
             logging.exception('A problem with one of the plotly '
