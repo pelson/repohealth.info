@@ -207,12 +207,7 @@ class APIDataAvailableHandler(BaseHandler):
         datastore = self.settings['datastore']
         executor = self.settings['executor']
 
-        status_file = repohealth.generate.STATUS_FILE.format(uuid)
-        if not os.path.exists(status_file):
-            status = {}
-        else:
-            with open(status_file, 'r') as fh:
-                status = json.load(fh)
+        status = repohealth.generate.job_status(uuid)
 
         if repohealth.generate.cache_available(uuid):
             return {'status': 200, 'message': "ready",

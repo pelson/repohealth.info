@@ -70,14 +70,14 @@ def main():
     n_processes = int(os.environ.get("WEB_CONCURRENCY", 1))
 
     # Disable concurrent servers for now, as we were filling our memory on heroku... :(
-    if True or n_processes == 1 or DEBUG:
+    if n_processes == 1 or DEBUG:
         http_server.listen(port)
     else:
         # http://www.tornadoweb.org/en/stable/guide/running.html#processes-and-ports
         http_server.bind(port)
         http_server.start(n_processes)
 
-    executor = ProcessPoolExecutor()
+    executor = ProcessPoolExecutor(max_workers=n_processes)
     app.settings['executor'] = executor
 
     if DEBUG:
