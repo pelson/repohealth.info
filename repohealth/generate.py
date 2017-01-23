@@ -81,6 +81,7 @@ def job_status(uuid):
         with fasteners.InterProcessLock(STATUS_LOCK_FILE.format(uuid)):
             with open(status_file, 'r') as fh:
                 status = json.load(fh)
+    return status
 
 
 def prepare_repo_data(uuid, token):
