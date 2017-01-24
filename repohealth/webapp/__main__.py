@@ -1,4 +1,4 @@
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import os
 
 import requests
@@ -13,6 +13,7 @@ from repohealth.webapp.handlers import (
     APIDataHandler, RepoReport, Status, Error404)
 from repohealth.auth.github import (
     GithubAuthHandler, GithubAuthLogout)
+import repohealth.twitter
 
 
 def routes():
@@ -46,6 +47,14 @@ def keep_alive():
         # Sleep for 8 mins and do the same again...
         yield tornado.gen.sleep(8 * 60)
 
+
+@tornado.gen.coroutine
+def tweet(executor):
+    while True:
+        # Don't tweet too often - at most once every 11 hours would be fine for now.
+        yield tornado.gen.sleep(11 * 60 * 60)
+        yield executor.submit(repohealth.twitter.tweet_status)
+                
 
 def main():
     # Our datastore is simply a dictionary of {Repo UUID: Future objects}
@@ -84,6 +93,11 @@ def main():
         tornado.autoreload.add_reload_hook(executor.shutdown)
 
     tornado.ioloop.IOLoop.current().spawn_callback(keep_alive)
+
+    if not DEBUG:
+        # Line up a twitter bot to handle our social affairs.
+        thread_pool = ThreadPoolExecutor(1)
+        tornado.ioloop.IOLoop.current().spawn_callback(tweet, thread_pool)
 
     enable_pretty_logging()
     tornado.ioloop.IOLoop.instance().start()

@@ -5,8 +5,9 @@ Compute the data that is used for producing the health report.
 from collections import OrderedDict
 import datetime
 from functools import partial
-import os
+import glob
 import json
+import os
 import logging
 import shutil
 import traceback
@@ -19,6 +20,7 @@ from github import Github
 import plotly.graph_objs as go
 import plotly.offline.offline as pl_offline
 
+import repohealth
 import repohealth.git
 import repohealth.github.stargazers
 import repohealth.github.issues
@@ -26,13 +28,17 @@ import repohealth.github.emojis
 from repohealth.analysis import PLOTLY_PLOTS
 
 
-CACHE_EXCEPTION = os.path.join('ephemeral_storage', '{}.exception.json')
-CACHE_GH = os.path.join('ephemeral_storage', '{}.github.json')
-CACHE_COMMITS = os.path.join('ephemeral_storage', '{}.commits.json')
-CACHE_CLONE = os.path.join('ephemeral_storage', '{}')
-CACHE_PLOTS = os.path.join('ephemeral_storage', '{}.plots.json')
-STATUS_FILE = os.path.join('ephemeral_storage', '{}.status.json')
-STATUS_LOCK_FILE = os.path.join('ephemeral_storage', '{}.status.lock.json')
+CACHE_ROOT = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(repohealth.__file__))),
+                          'ephemeral_storage')
+
+
+CACHE_EXCEPTION = os.path.join(CACHE_ROOT, '{}.exception.json')
+CACHE_GH = os.path.join(CACHE_ROOT, '{}.github.json')
+CACHE_COMMITS = os.path.join(CACHE_ROOT, '{}.commits.json')
+CACHE_CLONE = os.path.join(CACHE_ROOT, '{}')
+CACHE_PLOTS = os.path.join(CACHE_ROOT, '{}.plots.json')
+STATUS_FILE = os.path.join(CACHE_ROOT, '{}.status.json')
+STATUS_LOCK_FILE = os.path.join(CACHE_ROOT, '{}.status.lock.json')
 
 
 def clear_cache(uuid):
@@ -71,6 +77,29 @@ def cache_available(uuid):
               os.path.exists(CACHE_COMMITS.format(uuid))) or
              os.path.exists(CACHE_EXCEPTION.format(uuid)))
     return avail
+
+
+def in_cache():
+    """
+    Return all of the uuids of packages with sucessful & valid caches.
+
+    """
+    patterns = [CACHE_GH.format('*/*'), CACHE_COMMITS.format('*/*')]
+
+    gh = sorted(glob.glob(patterns[0]))
+    cm = sorted(glob.glob(patterns[1]))
+
+    # One particularly sneaky (and unpleasant) way of getting the uuid from the
+    # filename is to inject something that shouldn't be there, and then
+    # figure out the indices that we need to pick off...
+    split_char = '&/&/&/&'
+    gh_pick = CACHE_GH.format(split_char).split(split_char)
+    gh = [path[len(gh_pick[0]) : -len(gh_pick[1])] for path in gh]
+    cm_pick = CACHE_COMMITS.format(split_char).split(split_char)
+    cm = [path[len(gh_pick[0]) : -len(cm_pick[1])] for path in cm]
+  
+    available = set(gh) & set(cm)
+    return sorted(available)
 
 
 def job_status(uuid):

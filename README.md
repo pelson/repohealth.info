@@ -46,7 +46,7 @@ Google analytics is enabled on the service - please let @pelson know if you are 
 
 There are a number of other tools and services that provide health metrics (and scores) of Git and/or GitHub repositories:
 
- * https://github.com/dogweather/repo-health-check
+ * https://github.com/dogweather/repo-health-check / http://repocheck.com/
  * https://github.com/gorillamania/repo-health
  * https://github.com/chillu/github-dashing
  * https://github.com/timqian/star-history
