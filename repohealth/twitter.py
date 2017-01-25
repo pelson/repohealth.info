@@ -27,10 +27,16 @@ class RegexpFormatter(string.Formatter):
 
 
 class TweetPattern(object):
-    """A pattern for tweeting."""
+    """
+    A pattern for tweeting.
+    
+    Note: Care must be taken when matching URLs in patterns - twitter shortens URLs, and
+    we don't get back the full (i.e. unshortened) url from the API.
+
+    """
     patterns = [
-                'We generate a report of repository metrics for any public github repo. Try it out at repohealth.info',
-                'If you want to find out how your favourite repository is faring, take a look at repohealth.info',
+                'We generate a report of repository metrics for any public github repo. Try it out at {repohealth_url}',
+                'If you want to find out how your favourite repository is faring, take a look at {repohealth_url}',
                 ]
 
     @classmethod
@@ -100,19 +106,19 @@ class TweetPattern(object):
         """
         return context
 
-    def format(self, context):
+    def format(self, context, extra_context=None):
         """
         Where the substitution into the pattern takes place.
 
         """
-        return self.pattern.format(**context)
+        return self.pattern.format(**(extra_context or {}), **context)
 
     def drop_content(self, message, content):
         return
 
 
 class NReposInCachePattern(TweetPattern):
-    patterns = ['I recently generated reports for {names} on repohealth.info',
+    patterns = ['I recently generated reports for #{names[0]} and #{names[1]} on {repohealth_url}',
                ]
 
     def condition(self, context):
@@ -125,7 +131,7 @@ class NReposInCachePattern(TweetPattern):
         names = [content['github']['repo']['name']
                  for content in top_repos[:3]]
         return dict(**context, n_repos=len(context),
-                    names='#{} and #{}'.format(*names))
+                    names=names)
         
 
 class RepoTweet(TweetPattern):
@@ -167,13 +173,6 @@ class RepoTweet(TweetPattern):
 
         """
         return context
-
-    def format(self, context):
-        """
-        Where the substitution into the pattern takes place.
-
-        """
-        return self.pattern.format(**context)
 
 
 def round_sig(x, sig=2):
@@ -264,12 +263,14 @@ def tweet_status():
         context['name'] = context['github']['repo']['name']
         context['url'] = 'repohealth.info/report/{}'.format(uuid)
 
+    global_context = {'repohealth_url': 'repohealth.info'}
+
     patterns = drop_recent(recently_tweeted, patterns, content)
 
     tweet_options = []
     for pattern_gen in patterns:
         for pattern, context in pattern_gen.context(content):
-            tweet_options.append(pattern.format(context))
+            tweet_options.append(pattern.format(context, global_context))
 
     # TODO: Filter out tweets longer than 140 NFC chars.
 
@@ -279,53 +280,9 @@ def tweet_status():
         import random
         msg = random.choice(tweet_options)
         print('TWEETING: {}'.format(msg))
-        api.update_status(msg)
+        if True:
+            api.update_status(msg)
 
 
 if __name__ == '__main__':
-    patterns = TweetPattern.all_patterns()
-
-    import repohealth.generate
-    avail = repohealth.generate.in_cache()
-
-    recently_tweeted = [
-                        'Just compiled a repo report for pandas - it now has over 8200 stargazers!',
-                        'Just compiled a repo report for pandas - it now has over 8200 stargazers!',
-                        'd3 now has over 16000 forks! See the full report at repohealth.info/report/d3/d3',
-                        #        'Did you know that scitools/cartopy now has over 230 stargazers on GitHub? Full report at repohealth.info/report/scitools/cartopy',
-                        'Just generated a health report for cartopy at repohealth.info/report/scitools/cartopy',
-                        'If you want to find out how your favourite repository is faring, take a look at repohealth.info',
-                        'Not anything meaningful',
-                        'We generate a report of repository metrics for any public github repo. Try it out at repohealth.info',
-                        ]
-
-#    api = twitter_api()
-#    recently_tweeted = list(get_tweets(api, None))
-
-    # We don't need a token - the report is already generated.
-    content = {uuid: repohealth.generate.repo_data(uuid, token=None)
-               for uuid in avail}
-
-    # Universally add extra content to our report context.
-    for uuid, context in content.items():
-        context.setdefault('uuid', uuid)
-        context['name'] = context['github']['repo']['name']
-        context['url'] = 'repohealth.info/report/{}'.format(uuid)
-
-    patterns = drop_recent(recently_tweeted, patterns, content)
-
-    tweet_options = []
-    for pattern_gen in patterns:
-        for pattern, context in pattern_gen.context(content):
-            tweet_options.append(pattern.format(context))
-
-    # TODO: Filter out tweets longer than 140 NFC chars.
-    
-    print('\n    '.join(tweet_options))
-    print('----')
-    if not tweet_options:
-        print('Nothing to tweet :(')
-    else:
-        import random
-    #    api.updated_status(random.choice(tweet_options))
-        print(random.choice(tweet_options))
+    tweet_status()
