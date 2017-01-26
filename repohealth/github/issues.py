@@ -21,7 +21,7 @@ def handle_response(issues, response):
             # that hadn't been well handled. These came particularly from the
             # pandas-dev/pandas request.
             if isinstance(record, dict):
-                issues.extend(content)
+                issues.extend(record)
 
 
 @coroutine
