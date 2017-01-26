@@ -15,7 +15,13 @@ def parse_link(link_header):
 
 def handle_response(issues, response):
     content = json.loads(response.body.decode('utf-8'))
-    issues.extend(content)
+    if content:
+        for record in content:
+            # Sometimes we were seeing spurious "documentation_url" responses
+            # that hadn't been well handled. These came particularly from the
+            # pandas-dev/pandas request.
+            if isinstance(record, dict):
+                issues.extend(content)
 
 
 @coroutine
