@@ -253,7 +253,7 @@ def repo_data(uuid, token):
             with open(cache, 'w') as fh:
                 json.dump(repo_data, fh)
 
-            if not clone_exists:
+            if not clone_exists and os.path.exists(clone_target):
                 # This was ours to clone, so nuke it now.
                 shutil.rmtree(clone_target)
 
