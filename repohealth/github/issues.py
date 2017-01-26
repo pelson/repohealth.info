@@ -1,7 +1,10 @@
 import json
+import logging
 from urllib.parse import urlparse, parse_qs
+import traceback
 
 import github as gh
+import tornado.httpclient
 from tornado.httpclient import AsyncHTTPClient
 from tornado.gen import coroutine
 
@@ -14,14 +17,15 @@ def parse_link(link_header):
 
 
 def handle_response(issues, response):
-    content = json.loads(response.body.decode('utf-8'))
-    if content:
-        for record in content:
-            # Sometimes we were seeing spurious "documentation_url" responses
-            # that hadn't been well handled. These came particularly from the
-            # pandas-dev/pandas request.
-            if isinstance(record, dict):
-                issues.extend(record)
+    if response.body:
+        content = json.loads(response.body.decode('utf-8'))
+        if content:
+            for record in content:
+                # Sometimes we were seeing spurious "documentation_url" responses
+                # that hadn't been well handled. These came particularly from the
+                # pandas-dev/pandas request.
+                if isinstance(record, dict):
+                    issues.extend(record)
 
 
 @coroutine
@@ -56,6 +60,8 @@ def repo_issues(repo, token):
         f = client.fetch(url, headers=headers, callback=get_issues)
         f.url = url
         futures.append(f)
+
+    error_count = 0
 
     while futures:
         waited = False
