@@ -7,14 +7,16 @@
 {% set github_issue_body = """
 Hi,
 
-I was looking at {} on repohealth.info and got the following traceback:
+I was looking at {uri} on repohealth.info and got the following traceback:
 
 ```
-{}
+{traceback}
 ```
+
+Direct link: https://repohealth.info/{uri}
 
 Thanks,
-""".format(handler.request.uri, traceback.strip()) %}
+""".format(uri=handler.request.uri, traceback=traceback.strip()) %}
 {% endif %}
 
 
@@ -38,7 +40,7 @@ Thanks,
         <p>
         <pre style="text-align: left;">{{ traceback|e }}</pre>
         </p>
-        <a href="https://github.com/pelson/repo-health-report/issues/new?title={{ github_issue_title|urlencode }}&body={{ github_issue_body|urlencode }}">
+        <a href="https://github.com/pelson/repohealth.info/issues/new?title={{ github_issue_title|urlencode }}&body={{ github_issue_body|urlencode }}">
             You may want to consider reporting this on the repohealth issue tracker...
         </a>
         {% endif %}

@@ -27,7 +27,7 @@ The source of this repository is licensed under a BSD 3-clause license.
 
 We have intentionally kept the development setup of this repository very simple.
 The service is a single tornado web-app that can be deployed to any machine with the pre-requisite dependencies.
-The full code for building the operational Heroku image can be found in [buildpack-run.sh](https://github.com/pelson/repo-health-report/blob/master/buildpack-run.sh).
+The full code for building the operational Heroku image can be found in [buildpack-run.sh](https://github.com/pelson/repohealth.info/blob/master/buildpack-run.sh).
 
 
 When developing locally, a personal GitHub application token that points back to ```localhost:8888``` will be needed.
@@ -39,7 +39,7 @@ The service itself is running on Heroku, and whilst we could be making use of mo
 simply rely on our deployment target's ephemeral storage to act as a data cache.
 
 
-Google analytics is enabled on the service - please let @pelson know if you are a developer of repo-health-report and want access.
+Google analytics is enabled on the service - please let @pelson know if you have contributed to this repository and want access.
 
 
 ## Other work
