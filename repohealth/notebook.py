@@ -29,10 +29,11 @@ def notebook(uuid, payload, visualisations):
                    'https://repohealth.info/api/data/{}'.format(uuid),
                    'import base64',
                    'import json',
-                   'payload = json.loads(base64.b64decode(\n',
-                   '      {!r}'.format(encoded_data),
-                   '.decode("utf-8")))',
-                    ''])))
+                   'payload = json.loads(',
+                   '    base64.b64decode(',
+                   '        {!r}'.format(encoded_data),
+                   '    ).decode("utf-8")',
+                   ')'])))
     nb.cells.append(nbf.new_markdown_cell(
         "Now, let's initialise plotly, and recreate the visualisations on "
         "[repohealth.info](https://repohealth.info)."))
