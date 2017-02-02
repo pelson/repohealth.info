@@ -41,6 +41,10 @@ class TweetPattern(object):
 
     @classmethod
     def all_subclasses(cls, include_self=True):
+        """
+        Generator that recursively yields all subclasses of this class.
+
+        """
         if include_self:
             yield cls
 
@@ -50,14 +54,23 @@ class TweetPattern(object):
             yield from klass.all_subclasses(include_self=False)
 
     @classmethod
-    def all_patterns(cls, include_self=True):
-        patterns = []
-        pattern_types = cls.all_subclasses()
+    def all_patterns_all_subclasses(cls, include_self=True):
+        """
+        Instantiate TweetPatterns for all known subclasse patterns of this class.
 
-        for klass in pattern_types:
-            for pattern in klass.patterns[:]:
-                patterns.append(klass(pattern))
-        return patterns
+        """
+        patterns = []
+        for klass in cls.all_subclasses(include_self=include_self):
+            yield from klass.all_patterns()
+
+    @classmethod
+    def all_patterns(cls):
+        """
+        Instantiate a tweet pattern with the known patterns for this class.
+
+        """
+        for pattern in cls.patterns[:]:
+            yield cls(pattern)
 
     def __init__(self, pattern):
         self.pattern = pattern
@@ -180,34 +193,63 @@ def round_sig(x, sig=2):
     return round(x, sig-int(floor(log10(x)))-1)
 
 
+def round_with_direction_string(x):
+    """
+    Round the given integer to the nearest 2 s.f., as well as returning a string that
+    may be used to describe the rounding compared to the original (i.e. "less than", "more than", "exactly")
+    """
+    rounded = round_sig(x, 2)
+    if rounded < x:
+        over_nearly_or_exactly = 'less than'
+    elif rounded > x:
+        over_nearly_or_exactly = 'more than'
+    else:
+        over_nearly_or_exactly = 'same as'
+    return rounded, over_nearly_or_exactly
+
+
 # Some extremely useful statistics from the data payload.
 stargazers = lambda context: context['github']['repo']['stargazers_count']
 forks = lambda context: context['github']['repo']['forks_count']
 
 
 class LotsOfStars(RepoTweet):
-    patterns = ['Just compiled a repo report for {name} - it now has over {n_stargazers} stargazers!',
-                'Did you know that {name} now has over {n_stargazers} stargazers on GitHub? Full report at {url}',
+    patterns = ['Just compiled a repo report for {name} - it now has {stars_over_or_nearly}{n_stargazers} stargazers!',
+                'Did you know that {name} now has {stars_over_or_nearly}{n_stargazers} stargazers on GitHub? Full report at {url}',
                 ]
 
     def condition(self, context):
         return stargazers(context) >= 50
 
     def updated_context(self, context):
-        return dict(**context, n_stargazers=round_sig(stargazers(context), 2))
-#        context.setdefault('computed', {})['stargazers'] = round_sig(stargazers(context), 2)
-#        return context
+        context = context.copy()
+        n_stars = stargazers(context)
+        n_stars_rd, direction = round_with_direction_string(n_stars)
+        over_nearly_or_exactly = {'less than': 'over ',
+                                  'more than': 'nearly ',
+                                  'same as': ''}
+        
+        context.update({'n_stargazers': n_stars_rd,
+                        'stars_over_or_nearly': over_nearly_or_exactly[direction]})
+        return context
 
 
 class LotsOfForks(RepoTweet):
-    patterns = ['{name} now has over {computed[forks]} forks! See the full report at {url}',]
+    patterns = ['{name} now has {forks_over_or_nearly}{forks} forks! See the full report at {url}',]
 
     def condition(self, context):
         return forks(context) >= 50
 
     def updated_context(self, context):
         context = context.copy()
-        context.setdefault('computed', {})['forks'] = round_sig(forks(context), 2)
+        n_forks = forks(context)
+        n_forks_rd, direction = round_with_direction_string(n_forks)
+        over_nearly_or_exactly = {'less than': 'over ',
+                                  'more than': 'nearly ',
+                                  'same as': ''}
+        
+        context.update({'forks': n_forks_rd,
+                        'forks_over_or_nearly': over_nearly_or_exactly[direction]})
         return context
 
 
@@ -245,7 +287,7 @@ def drop_recent(recent_messages, patterns, content):
 
 
 def tweet_status():
-    patterns = TweetPattern.all_patterns()
+    patterns = TweetPattern.all_patterns_all_subclasses()
 
     import repohealth.generate
     avail = repohealth.generate.in_cache()
