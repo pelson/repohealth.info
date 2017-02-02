@@ -167,6 +167,7 @@ class Status(BaseHandler):
         gh = Github(user['access_token'])
         self.finish(self.render('status.html',
                                 futures=self.settings['datastore'],
+                                cached_jobs=repohealth.generate.in_cache(),
                                 user=user, gh=gh))
 
 

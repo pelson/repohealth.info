@@ -17,14 +17,9 @@ def parse_link(link_header):
 
 
 def handle_response(container, response):
-    content = json.loads(response.body.decode('utf-8'))
-    if content:
-        for record in content:
-            # Sometimes we were seeing spurious "documentation_url" responses
-            # that hadn't been well handled. These came particularly from the
-            # d3/d3 stars request.
-            if isinstance(record, dict):
-                container.append(record)
+    if not response.error:
+        content = json.loads(response.body.decode('utf-8'))
+        container.extend(content)
 
 
 @tornado.gen.coroutine

@@ -15,13 +15,23 @@
   <div class="col-sm-7 col-centered">
     <div class="alert alert-info centered" role="alert">
       <a href="#" class="alert-link">
-        Future cache has {{ futures|length }} items:
+        Queue has {{ futures|length }} items:
       </a>
 {% for uuid, future in futures.items() %}
 <li><a href="/report/{{ uuid }}">{{ uuid }}</a> <i class="fa fa-fw fa-lg {{ 'fa-check' if future.done() else 'fa-gears' }}"></i></li>
 {% endfor %}
 
     </div>
+    <div class="alert alert-info centered" role="alert">
+      <a href="#" class="alert-link">
+        {{ cached_jobs|length }} items in cache:
+      </a>
+{% for uuid in cached_jobs %}
+<li><a href="/report/{{ uuid }}">{{ uuid }}</a> <i class="fa fa-fw fa-lg fa-check"></i></li>
+{% endfor %}
+
+    </div>
+
   </div>
 
   </div>
