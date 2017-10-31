@@ -8,7 +8,7 @@ This is the source for the [Github repository health report service](https://rep
 
 The GitHub repository health report service aims to make it simple to gather metrics about the health of repositories on GitHub.
 We study a repository's commits and combine this with data available through the GitHub API to give easy to read metrics.
-No single metric is a good indicator of a repository's health, and we don't try to combine the information in any way to come up with a single health "score" -
+No single metric is a good indicator of a repository's health, and we don't try to combine the information in any way to come up with a single health "score" –
 instead, we present the data in a way that will allow you to draw your own conclusions.
 
 ## Scope
@@ -31,7 +31,7 @@ The full code for building the operational Heroku image can be found in [buildpa
 
 
 When developing locally, a personal GitHub application token that points back to ```localhost:8888``` will be needed.
-Next, define the CLIENT_ID, CLIENT_SECRET and COOKIE_SECRET environment variables (the latter can be set to any value).
+Next, define the ``CLIENT_ID``, ``CLIENT_SECRET`` and ``COOKIE_SECRET`` environment variables (the latter can be set to any value).
 Finally, simply run ``python webapp.py`` and authenticate through to view reports locally as you would on the public service.
 
 
