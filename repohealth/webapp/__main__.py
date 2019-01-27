@@ -62,7 +62,6 @@ def main():
 
     DEBUG = bool(os.environ.get('DEBUG', False))
     BASE_URL = 'https://repohealth.info' if not DEBUG else None
-    print(BASE_URL)
     app = make_app(github_client_id=os.environ['CLIENT_ID'],
                    github_client_secret=os.environ['CLIENT_SECRET'],
                    cookie_secret=os.environ['COOKIE_SECRET'],
@@ -96,8 +95,8 @@ def main():
 
     if not DEBUG:
         # Line up a twitter bot to handle our social affairs.
-        #thread_pool = ThreadPoolExecutor(1)
-        #        tornado.ioloop.IOLoop.current().spawn_callback(tweet, thread_pool)
+        thread_pool = ThreadPoolExecutor(1)
+        tornado.ioloop.IOLoop.current().spawn_callback(tweet, thread_pool)
         pass
 
     enable_pretty_logging()
