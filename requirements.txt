@@ -5,4 +5,8 @@ requests
 numpy
 nbformat
 fasteners
+jinja2
+gitpython
+pygithub
+tornado
 tweepy

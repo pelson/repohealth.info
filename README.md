@@ -42,6 +42,11 @@ simply rely on our deployment target's ephemeral storage to act as a data cache.
 Google analytics is enabled on the service - please let @pelson know if you have contributed to this repository and want access.
 
 
+```
+heroku config --shell > .env
+export $(heroku config --shell)
+```
+
 ## Other work
 
 There are a number of other tools and services that provide health metrics (and scores) of Git and/or GitHub repositories:
