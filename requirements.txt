@@ -19,7 +19,7 @@ jupyter-core==4.4.0       # via nbformat
 markupsafe==1.1.0         # via jinja2
 monotonic==1.5            # via fasteners
 nbformat==4.4.0
-numpy==1.16.0
+numpy==1.22.3
 oauthlib==3.0.1           # via requests-oauthlib
 pandas==0.24.0
 plotly==3.5.0
