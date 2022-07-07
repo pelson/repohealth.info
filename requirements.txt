@@ -36,5 +36,5 @@ smmap2==2.0.5             # via gitdb2
 tornado==5.1.1
 traitlets==4.3.2          # via jupyter-core, nbformat
 tweepy==3.7.0
-urllib3==1.24.1           # via requests
+urllib3==1.26.10           # via requests
 wrapt==1.11.1             # via deprecated
