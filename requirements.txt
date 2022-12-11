@@ -4,7 +4,7 @@
 #
 #    pip-compile --output-file requirements.txt setup.py
 #
-certifi==2018.11.29       # via requests
+certifi==2022.12.7       # via requests
 chardet==3.0.4            # via requests
 decorator==4.3.2          # via plotly, traitlets
 deprecated==1.2.4         # via pygithub
