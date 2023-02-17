@@ -10,7 +10,7 @@ decorator==4.3.2          # via plotly, traitlets
 deprecated==1.2.4         # via pygithub
 fasteners==0.14.1
 gitdb2==2.0.5             # via gitpython
-gitpython==2.1.11
+gitpython==3.1.31
 idna==2.8                 # via requests
 ipython-genutils==0.2.0   # via nbformat, traitlets
 jinja2==2.10
