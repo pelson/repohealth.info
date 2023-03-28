@@ -21,7 +21,7 @@ monotonic==1.5            # via fasteners
 nbformat==4.4.0
 numpy==1.16.0
 oauthlib==3.0.1           # via requests-oauthlib
-pandas==0.24.0
+pandas==1.5.3
 plotly==3.5.0
 pygithub==1.43.4
 pyjwt==1.7.1              # via pygithub
